@@ -414,6 +414,59 @@ export const hrApi = {
       data: payload,
     });
   },
+
+  uploadJd(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request({
+      method: "post",
+      url: "/hr/upload-jd",
+      data: formData,
+    });
+  },
+
+  confirmJd(payload) {
+    return request({
+      method: "post",
+      url: "/hr/confirm-jd",
+      data: payload,
+    });
+  },
+
+  updateSkillWeights(payload) {
+    return request({
+      method: "post",
+      url: "/hr/update-skill-weights",
+      data: payload,
+    });
+  },
+
+  localBackup() {
+    return request({
+      method: "get",
+      url: "/hr/local-backup",
+    });
+  },
+
+  prorectingTimeline(sessionId) {
+    return request({
+      method: "get",
+      url: `/hr/proctoring/${sessionId}`,
+    });
+  },
+};
+
+export const proctorApi = {
+  uploadFrame(sessionId, frameData) {
+    const formData = new FormData();
+    formData.append("frame", frameData);
+    return request({
+      method: "post",
+      url: "/proctor/frame",
+      data: formData,
+      params: { session_id: sessionId },
+    });
+  },
 };
 
 export const interviewApi = {

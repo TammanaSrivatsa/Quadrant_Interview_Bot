@@ -22,6 +22,10 @@ import Interview from "./pages/Interview";
 import Completed from "./pages/Completed";
 import FinalResultPage from "./pages/FinalResultPage";
 import SettingsPage from "./pages/SettingsPage";
+import HRJdUploadPage from "./pages/HRJdUploadPage";
+import HRSkillWeightsPage from "./pages/HRSkillWeightsPage";
+import HRBackupPage from "./pages/HRBackupPage";
+import HRProctoringPage from "./pages/HRProctoringPage";
 import "./App.css";
 
 function HomeRedirect() {
@@ -69,11 +73,15 @@ export default function App() {
           <Route path="hr" element={<HRDashboardPage />} />
           <Route path="hr/jds" element={<HRJdManagementPage />} />
           <Route path="hr/jds/:jdId" element={<HRJdDetailPage />} />
+          <Route path="hr/jds/upload" element={<HRJdUploadPage />} />
           <Route path="hr/candidates" element={<HRCandidatesPage />} />
           <Route path="hr/candidates/:candidateUid" element={<HRCandidateDetailPage />} />
           <Route path="hr/resume-analysis/:candidateUid" element={<ResumeAnalysisPage />} />
           <Route path="hr/interviews" element={<HRInterviewListPage />} />
           <Route path="hr/interviews/:id" element={<HRInterviewDetailPage />} />
+          <Route path="hr/proctoring/:sessionId" element={<HRProctoringPage />} />
+          <Route path="hr/skill-weights" element={<HRSkillWeightsPage />} />
+          <Route path="hr/backup" element={<HRBackupPage />} />
           <Route path="hr/matrix" element={<HRScoreMatrixPage />} />
           <Route path="hr/compare" element={<CandidateComparisonPage />} />
           <Route path="hr/analytics" element={<HRAnalyticsPage />} />

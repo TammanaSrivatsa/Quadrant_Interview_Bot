@@ -8,7 +8,7 @@ import {
   CheckCircle2,
   Activity,
 } from "lucide-react";
-import { interviewApi } from "../services/api";
+import { interviewApi, proctorApi } from "../services/api";
 import { cn } from "../utils/utils";
 
 function formatTime(seconds) {
@@ -391,6 +391,35 @@ export default function Interview() {
     }
   }, [isRecording, isSubmitting, isTranscribing, startRecording, stopRecordingAndTranscribe]);
 
+  const captureAndUploadFrame = useCallback(async () => {
+    if (!sessionId || !videoRef.current || !previewReady) return;
+
+    try {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      canvas.width = videoRef.current.videoWidth || 320;
+      canvas.height = videoRef.current.videoHeight || 240;
+      ctx.drawImage(videoRef.current, 0, 0);
+
+      canvas.toBlob(
+        async (blob) => {
+          if (!blob) return;
+          try {
+            await proctorApi.uploadFrame(sessionId, blob);
+          } catch {
+            // Silently fail frame uploads to not interrupt the interview
+          }
+        },
+        "image/jpeg",
+        0.7
+      );
+    } catch {
+      // Silently fail frame capture to not interrupt the interview
+    }
+  }, [sessionId, previewReady]);
+
   const handleSubmit = useCallback(async (skipCurrent = false) => {
     if (isSubmitting || isTranscribing) {
       return;
@@ -425,6 +454,17 @@ export default function Interview() {
     autoSubmittedRef.current = true;
     void handleSubmit(false);
   }, [currentQuestion, handleSubmit, isSubmitting, isTranscribing, timeLeft]);
+
+  useEffect(() => {
+    if (!sessionId || !previewReady) return;
+
+    // Capture and upload frames every 15 seconds for proctoring
+    const frameInterval = setInterval(() => {
+      captureAndUploadFrame();
+    }, 15000);
+
+    return () => clearInterval(frameInterval);
+  }, [sessionId, previewReady, captureAndUploadFrame]);
 
   if (loading) {
     return <p className="center muted">Starting interview session...</p>;
