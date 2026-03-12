@@ -10,6 +10,8 @@ import HRCandidateDetailPage from "./pages/HRCandidateDetailPage";
 import HRInterviewListPage from "./pages/HRInterviewListPage";
 import HRInterviewDetailPage from "./pages/HRInterviewDetailPage";
 import HRScoreMatrixPage from "./pages/HRScoreMatrixPage";
+import HRJdManagementPage from "./pages/HRJdManagementPage";
+import CandidateComparisonPage from "./pages/CandidateComparisonPage";
 import CandidateDashboardPage from "./pages/CandidateDashboardPage";
 import PracticeInterviewPage from "./pages/PracticeInterviewPage";
 import PreCheck from "./pages/PreCheck";
@@ -62,12 +64,14 @@ export default function App() {
       <Route element={<ProtectedRoute role="hr" />}>
         <Route element={<DashboardLayout />}>
           <Route path="hr" element={<HRDashboardPage />} />
+          <Route path="hr/jds" element={<HRJdManagementPage />} />
           <Route path="hr/candidates" element={<HRCandidatesPage />} />
           <Route path="hr/candidates/:candidateUid" element={<HRCandidateDetailPage />} />
           <Route path="hr/interviews" element={<HRInterviewListPage />} />
           <Route path="hr/interviews/:id" element={<HRInterviewDetailPage />} />
           <Route path="hr/matrix" element={<HRScoreMatrixPage />} />
-          <Route path="hr/analytics" element={<FinalResultPage />} /> {/* Reusing for demo */}
+          <Route path="hr/compare" element={<CandidateComparisonPage />} />
+          <Route path="hr/analytics" element={<FinalResultPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>

@@ -9,7 +9,9 @@ import {
   MessageSquare,
   BarChart3,
   Video,
-  LayoutGrid
+  LayoutGrid,
+  FileText,
+  Columns3
 } from "lucide-react";
 import { useAuth } from "../context/useAuth";
 import { cn } from "../utils/utils";
@@ -20,7 +22,9 @@ export default function Sidebar() {
 
   const hrLinks = [
     { name: "Dashboard", path: "/hr", icon: LayoutDashboard },
+    { name: "JD Management", path: "/hr/jds", icon: FileText },
     { name: "Candidates", path: "/hr/candidates", icon: Users },
+    { name: "Compare Candidates", path: "/hr/compare", icon: Columns3 },
     { name: "Score Matrix", path: "/hr/matrix", icon: LayoutGrid },
     { name: "Interviews", path: "/hr/interviews", icon: ClipboardList },
     { name: "Analytics", path: "/hr/analytics", icon: BarChart3 },
