@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
   withCredentials: true,
 });
 
@@ -343,6 +343,13 @@ export const hrApi = {
     });
   },
 
+  deleteJd(jdId) {
+    return request({
+      method: "delete",
+      url: `/hr/jds/${jdId}`,
+    });
+  },
+
   async listCandidates(params = {}) {
     const response = await request({
       method: "get",
@@ -417,7 +424,7 @@ export const hrApi = {
 
   uploadJd(file) {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("jd_file", file);
     return request({
       method: "post",
       url: "/hr/upload-jd",
@@ -441,14 +448,20 @@ export const hrApi = {
     });
   },
 
-  localBackup() {
-    return request({
-      method: "get",
-      url: "/hr/local-backup",
-    });
+  async localBackup() {
+    try {
+      const response = await apiClient({
+        method: "get",
+        url: "/hr/local-backup",
+        responseType: "blob",
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(extractErrorMessage(error));
+    }
   },
 
-  prorectingTimeline(sessionId) {
+  proctoringTimeline(sessionId) {
     return request({
       method: "get",
       url: `/hr/proctoring/${sessionId}`,
@@ -457,157 +470,16 @@ export const hrApi = {
 };
 
 export const proctorApi = {
-  uploadFrame(sessionId, frameData) {
+  uploadFrame(sessionId, frameData, eventType = "scan") {
     const formData = new FormData();
-    formData.append("frame", frameData);
+    formData.append("file", frameData, "frame.jpg");
+    formData.append("session_id", String(sessionId));
+    formData.append("event_type", eventType);
     return request({
       method: "post",
       url: "/proctor/frame",
       data: formData,
-      params: { session_id: sessionId },
     });
-  },
-
-  // JD Management endpoints
-  async listJds() {
-    await delay();
-    // Returns mock JDs from mockData
-    const mockJDs = [
-      {
-        id: 1,
-        title: "Full Stack Developer",
-        jd_text: "Looking for experienced Full Stack developers...",
-        qualify_score: 70,
-        min_academic_percent: 60,
-        total_questions: 8,
-        weights_json: { "React": 10, "Node.js": 10, "Python": 5 },
-        created_at: "2026-02-15T10:00:00Z",
-        candidate_count: 3,
-      },
-      {
-        id: 2,
-        title: "Frontend Engineer",
-        jd_text: "Seeking skilled Frontend developers...",
-        qualify_score: 75,
-        min_academic_percent: 65,
-        total_questions: 8,
-        weights_json: { "React": 15, "TypeScript": 10, "CSS": 8 },
-        created_at: "2026-02-20T14:30:00Z",
-        candidate_count: 2,
-      },
-      {
-        id: 3,
-        title: "Backend Developer",
-        jd_text: "We are hiring Backend engineers...",
-        qualify_score: 72,
-        min_academic_percent: 60,
-        total_questions: 8,
-        weights_json: { "Python": 12, "SQL": 10, "Docker": 8 },
-        created_at: "2026-03-01T09:15:00Z",
-        candidate_count: 1,
-      },
-    ];
-    return { ok: true, jds: mockJDs };
-  },
-
-  async getJd(jdId) {
-    await delay();
-    const mockJDs = [
-      {
-        id: 1,
-        title: "Full Stack Developer",
-        jd_text: "Looking for experienced Full Stack developers with 5+ years experience...",
-        qualify_score: 70,
-        min_academic_percent: 60,
-        total_questions: 8,
-        project_question_ratio: 0.8,
-        weights_json: { "React": 10, "Node.js": 10, "Python": 5 },
-        created_at: "2026-02-15T10:00:00Z",
-        candidate_count: 3,
-      },
-      {
-        id: 2,
-        title: "Frontend Engineer",
-        jd_text: "Seeking skilled Frontend developers...",
-        qualify_score: 75,
-        min_academic_percent: 65,
-        total_questions: 8,
-        project_question_ratio: 0.8,
-        weights_json: { "React": 15, "TypeScript": 10, "CSS": 8 },
-        created_at: "2026-02-20T14:30:00Z",
-        candidate_count: 2,
-      },
-      {
-        id: 3,
-        title: "Backend Developer",
-        jd_text: "We are hiring Backend engineers...",
-        qualify_score: 72,
-        min_academic_percent: 60,
-        total_questions: 8,
-        project_question_ratio: 0.75,
-        weights_json: { "Python": 12, "SQL": 10, "Docker": 8 },
-        created_at: "2026-03-01T09:15:00Z",
-        candidate_count: 1,
-      },
-    ];
-    const jd = mockJDs.find(j => j.id === Number(jdId));
-    if (!jd) throw new Error("JD not found");
-    return { ok: true, jd };
-  },
-
-  async createJd(payload) {
-    await delay();
-    // Simulate creating a new JD
-    const newJd = {
-      id: Math.floor(Math.random() * 10000),
-      title: payload.title,
-      jd_text: payload.jd_text,
-      jd_dict_json: payload.jd_dict_json || {},
-      qualify_score: payload.qualify_score || 65,
-      min_academic_percent: payload.min_academic_percent || 0,
-      total_questions: payload.total_questions || 8,
-      project_question_ratio: payload.project_question_ratio || 0.8,
-      weights_json: payload.weights_json || {},
-      created_at: new Date().toISOString(),
-      candidate_count: 0,
-    };
-    return { ok: true, jd: newJd };
-  },
-
-  async updateJd(jdId, payload) {
-    await delay();
-    // Simulate updating a JD
-    return {
-      ok: true,
-      jd: {
-        id: jdId,
-        title: payload.title,
-        jd_text: payload.jd_text,
-        qualify_score: payload.qualify_score,
-        min_academic_percent: payload.min_academic_percent,
-        total_questions: payload.total_questions,
-        weights_json: payload.weights_json || {},
-      },
-    };
-  },
-
-  async deleteJd(jdId) {
-    await delay();
-    return { ok: true, message: `JD ${jdId} deleted` };
-  },
-
-  async candidateSkillGap(candidateUid, jdId) {
-    await delay();
-    // Mock skill gap data
-    return {
-      ok: true,
-      skill_gap: {
-        matched_skills: ["React", "Node.js", "JavaScript"],
-        missing_skills: ["Kubernetes", "GraphQL"],
-        match_percentage: 78,
-        recommendations: ["Learn GraphQL basics", "Get Kubernetes certification"],
-      },
-    };
   },
 };
 

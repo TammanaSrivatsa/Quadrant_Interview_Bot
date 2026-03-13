@@ -265,6 +265,9 @@ def select_interview_date(
     current_user: SessionUser = Depends(require_role("candidate")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    if not (payload.interview_date or "").strip():
+        raise HTTPException(status_code=400, detail="Interview date is required")
+
     result = (
         db.query(Result)
         .filter(Result.id == payload.result_id, Result.candidate_id == current_user.user_id)
@@ -276,7 +279,7 @@ def select_interview_date(
         raise HTTPException(status_code=400, detail="Interview can be scheduled only for shortlisted result")
 
     result.interview_token = None
-    result.interview_date = payload.interview_date
+    result.interview_date = payload.interview_date.strip()
     result.interview_link = interview_entry_url(result.id)
     db.commit()
 
@@ -284,7 +287,7 @@ def select_interview_date(
     email_sent = True
     message = "Interview link sent to your registered email."
     try:
-        send_interview_email(candidate.email, candidate.name, payload.interview_date, result.interview_link)
+        send_interview_email(candidate.email, candidate.name, result.interview_date, result.interview_link)
     except Exception:
         email_sent = False
         message = "Interview scheduled, but email delivery failed."

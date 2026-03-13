@@ -75,7 +75,7 @@ export default function HRCandidateDetailPage() {
       setLoadingSkillGap(true);
       try {
         const jobId = latestApplication?.job?.id || 1;
-        const response = await hrApi.candidateSkillGap(candidateUid, jobId);
+        const response = await hrApi.skillGap(candidateUid, jobId);
         setSkillGapData(response?.skill_gap || null);
       } catch (skillGapError) {
         console.error("Failed to load skill gap:", skillGapError);

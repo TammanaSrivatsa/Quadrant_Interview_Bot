@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ai_engine.phase1.scoring import compute_resume_scorecard
 from ai_engine.phase1.matching import extract_text_from_file
 from models import Candidate, HR, JobDescription, JobDescriptionConfig, Result
+from services.jd_sync import extract_min_academic_percent
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -25,6 +26,79 @@ def interview_entry_url(result_id: int | None) -> str | None:
     if not result_id:
         return None
     return f"{frontend_base_url()}/interview/{int(result_id)}"
+
+
+def _latest_interview_session(result: Result | None):
+    sessions = getattr(result, "sessions", None) or []
+    if not sessions:
+        return None
+    return max(
+        sessions,
+        key=lambda item: (item.started_at or datetime.min, item.id or 0),
+    )
+
+
+def _application_stage(result: Result | None, latest_session) -> str | None:
+    if not result:
+        return None
+
+    session_status = str(getattr(latest_session, "status", "") or "").strip().lower()
+    if session_status in {"selected", "rejected"}:
+        return "final_reviewed"
+    if latest_session and (latest_session.ended_at or session_status == "completed"):
+        return "interview_submitted"
+    if session_status == "in_progress":
+        return "interview_in_progress"
+    if result.shortlisted and (result.interview_date or "").strip():
+        return "interview_ready"
+    if result.shortlisted:
+        return "screening_shortlisted"
+    return "screening_rejected"
+
+
+def interview_access_state(result: Result | None) -> dict[str, object]:
+    if not result:
+        return {
+            "interview_scheduled": False,
+            "interview_ready": False,
+            "interview_locked_reason": None,
+        }
+
+    if not result.shortlisted:
+        return {
+            "interview_scheduled": False,
+            "interview_ready": False,
+            "interview_locked_reason": "shortlist_required",
+        }
+
+    if not (result.interview_date or "").strip():
+        return {
+            "interview_scheduled": False,
+            "interview_ready": False,
+            "interview_locked_reason": "schedule_required",
+        }
+
+    latest_session = _latest_interview_session(result)
+    latest_status = str(getattr(latest_session, "status", "") or "").strip().lower()
+    if latest_status == "in_progress":
+        return {
+            "interview_scheduled": True,
+            "interview_ready": True,
+            "interview_locked_reason": None,
+        }
+
+    if latest_session and (latest_session.ended_at or latest_status in {"completed", "selected", "rejected"}):
+        return {
+            "interview_scheduled": True,
+            "interview_ready": False,
+            "interview_locked_reason": "already_completed",
+        }
+
+    return {
+        "interview_scheduled": True,
+        "interview_ready": True,
+        "interview_locked_reason": None,
+    }
 
 
 def generate_candidate_uid() -> str:
@@ -88,6 +162,7 @@ def list_available_jobs(db: Session) -> list[dict[str, object]]:
                 "experience_requirement": job.experience_requirement,
                 "skill_scores": job.skill_scores or {},
                 "cutoff_score": float(job.cutoff_score if job.cutoff_score is not None else 65.0),
+                "min_academic_percent": extract_min_academic_percent(job.education_requirement),
                 "question_count": int(job.question_count if job.question_count is not None else 8),
             }
         )
@@ -106,7 +181,7 @@ def list_active_jds(db: Session) -> list[dict[str, object]]:
                 "jd_dict_json": {},
                 "weights_json": job.skill_scores or {},
                 "qualify_score": float(job.cutoff_score if job.cutoff_score is not None else 65.0),
-                "min_academic_percent": 0.0,
+                "min_academic_percent": extract_min_academic_percent(job.education_requirement),
                 "total_questions": int(job.question_count if job.question_count is not None else 8),
                 "project_question_ratio": 0.8,
                 "created_at": None,
@@ -139,15 +214,39 @@ def list_active_jds(db: Session) -> list[dict[str, object]]:
 def serialize_result(result: Result | None) -> dict[str, object] | None:
     if not result:
         return None
+    access = interview_access_state(result)
+    latest_session = _latest_interview_session(result)
+    latest_session_status = str(getattr(latest_session, "status", "") or "").strip().lower() or None
+    interview_completed = bool(
+        latest_session and (latest_session.ended_at or latest_session_status in {"completed", "selected", "rejected"})
+    )
+    final_decision = latest_session_status if latest_session_status in {"selected", "rejected"} else None
+    explanation = result.explanation or {}
+    final_review = {
+        "final_score": explanation.get("hr_final_score"),
+        "behavioral_score": explanation.get("hr_behavioral_score"),
+        "communication_score": explanation.get("hr_communication_score"),
+        "red_flags": explanation.get("hr_red_flags"),
+        "notes": explanation.get("hr_final_notes"),
+    }
+    final_review_available = final_decision is not None or any(
+        value is not None and value != "" for value in final_review.values()
+    )
     return {
         "id": result.id,
         "score": float(result.score or 0),
         "shortlisted": bool(result.shortlisted),
-        "explanation": result.explanation or {},
+        "explanation": explanation,
         "interview_date": result.interview_date,
-        # Always expose the current SPA entry route, even if legacy rows still
-        # store an old backend/token URL in app.db.
-        "interview_link": interview_entry_url(result.id),
+        "interview_scheduled": bool(access["interview_scheduled"]),
+        "interview_ready": bool(access["interview_ready"]),
+        "interview_locked_reason": access["interview_locked_reason"],
+        "interview_link": interview_entry_url(result.id) if access["interview_ready"] else None,
+        "interview_session_status": latest_session_status,
+        "interview_completed": interview_completed,
+        "final_decision": final_decision,
+        "final_review": final_review if final_review_available else None,
+        "application_stage": _application_stage(result, latest_session),
     }
 
 
@@ -194,6 +293,11 @@ def evaluate_resume_for_job(
     )
     education_requirement = getattr(job, "education_requirement", None)
     experience_requirement = int(getattr(job, "experience_requirement", 0) or 0)
+    min_academic_percent = float(
+        getattr(job, "min_academic_percent", None)
+        if getattr(job, "min_academic_percent", None) is not None
+        else extract_min_academic_percent(education_requirement)
+    )
     cutoff_score = float(
         getattr(job, "cutoff_score", None)
         if getattr(job, "cutoff_score", None) is not None
@@ -213,8 +317,13 @@ def evaluate_resume_for_job(
         jd_skill_scores=jd_skill_scores,
         education_requirement=education_requirement,
         experience_requirement=experience_requirement,
+        min_academic_percent=min_academic_percent,
     )
     explanation["cutoff_score_used"] = cutoff_score
+    explanation["score_cutoff_met"] = float(explanation["final_resume_score"]) >= cutoff_score
+    explanation["shortlist_eligible"] = bool(explanation["score_cutoff_met"]) and bool(
+        explanation.get("academic_cutoff_met", True)
+    )
     explanation["question_count_used"] = question_count
     explanation["project_ratio_used"] = project_ratio
     # Question generation is triggered explicitly from HR endpoint and stored on candidates.questions_json.
@@ -230,13 +339,18 @@ def upsert_result(
     interview_questions: list[dict[str, str]] | None = None,
     cutoff_score: float = 65.0,
 ) -> Result:
+    score_cutoff_met = score >= float(cutoff_score)
+    academic_cutoff_met = bool(explanation.get("academic_cutoff_met", True))
+    shortlisted = bool(explanation.get("shortlist_eligible", score_cutoff_met and academic_cutoff_met))
+
+    explanation["score_cutoff_met"] = score_cutoff_met
+    explanation["shortlist_eligible"] = shortlisted
     current = (
         db.query(Result)
         .filter(Result.candidate_id == candidate_id, Result.job_id == job_id)
         .order_by(Result.id.desc())
         .first()
     )
-    shortlisted = score >= float(cutoff_score)
     if current:
         current.score = score
         current.shortlisted = shortlisted

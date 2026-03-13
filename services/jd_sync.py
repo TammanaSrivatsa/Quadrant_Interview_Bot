@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,23 @@ def normalize_skill_map(raw_map: dict[str, int] | None) -> dict[str, int]:
         except Exception:
             normalized[skill] = 0
     return normalized
+
+
+def extract_min_academic_percent(value: str | float | int | None) -> float:
+    if value is None:
+        return 0.0
+
+    if isinstance(value, (int, float)):
+        return max(0.0, min(100.0, float(value)))
+
+    raw = str(value).strip()
+    if not raw:
+        return 0.0
+
+    match = re.search(r"(\d+(?:\.\d+)?)\s*%?", raw)
+    if not match:
+        return 0.0
+    return max(0.0, min(100.0, float(match.group(1))))
 
 
 def sync_legacy_job_from_config(
@@ -61,6 +79,7 @@ def sync_legacy_job_from_config(
 def sync_config_from_legacy_job(db: Session, legacy_job: JobDescription) -> JobDescriptionConfig:
     jd_config = db.query(JobDescriptionConfig).filter(JobDescriptionConfig.id == legacy_job.id).first()
     title = legacy_job.jd_title or Path(legacy_job.jd_text or "").name or "Untitled JD"
+    min_academic_percent = extract_min_academic_percent(legacy_job.education_requirement)
     if not jd_config:
         jd_config = JobDescriptionConfig(
             id=legacy_job.id,
@@ -69,7 +88,7 @@ def sync_config_from_legacy_job(db: Session, legacy_job: JobDescription) -> JobD
             jd_dict_json={},
             weights_json=normalize_skill_map(legacy_job.skill_scores),
             qualify_score=float(legacy_job.cutoff_score if legacy_job.cutoff_score is not None else 65.0),
-            min_academic_percent=0.0,
+            min_academic_percent=min_academic_percent,
             total_questions=int(legacy_job.question_count if legacy_job.question_count is not None else 8),
             project_question_ratio=0.8,
         )
@@ -81,6 +100,7 @@ def sync_config_from_legacy_job(db: Session, legacy_job: JobDescription) -> JobD
     jd_config.jd_text = legacy_job.jd_text or ""
     jd_config.weights_json = normalize_skill_map(legacy_job.skill_scores)
     jd_config.qualify_score = float(legacy_job.cutoff_score if legacy_job.cutoff_score is not None else 65.0)
+    jd_config.min_academic_percent = min_academic_percent
     jd_config.total_questions = int(legacy_job.question_count if legacy_job.question_count is not None else 8)
     jd_config.project_question_ratio = float(jd_config.project_question_ratio if jd_config.project_question_ratio else 0.8)
     return jd_config

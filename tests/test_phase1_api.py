@@ -135,12 +135,19 @@ class Phase1ApiTests(unittest.TestCase):
 
         result_id = resume_payload["result"]["id"]
         resume_score = float(resume_payload["result"]["score"])
+        self.assertTrue(resume_payload["result"]["shortlisted"])
 
         practice_response = self.client.get("/api/candidate/practice-kit")
         self.assertEqual(practice_response.status_code, 200, practice_response.text)
         practice_payload = practice_response.json()
         self.assertTrue(practice_payload["practice"]["questions"])
         self.assertIn("resume_advice", practice_payload)
+
+        schedule_response = self.client.post(
+            "/api/candidate/select-interview-date",
+            json={"result_id": result_id, "interview_date": "2026-03-14T10:30"},
+        )
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.text)
 
         start_response = self.client.post(
             "/api/interview/start",

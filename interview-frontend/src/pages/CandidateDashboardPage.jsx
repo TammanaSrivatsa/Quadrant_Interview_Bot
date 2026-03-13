@@ -45,6 +45,33 @@ export default function CandidateDashboardPage() {
   const matchedSkills = explanation?.matched_skills || [];
   const missingSkills = explanation?.missing_skills || [];
   const interviewRoute = routeFromInterviewLink(result?.interview_link);
+  const applicationStatusRoute = "/interview/result";
+  const interviewSessionStatus = String(result?.interview_session_status || "").toLowerCase();
+  const interviewReady = Boolean(result?.interview_ready && interviewRoute);
+  const interviewScheduled = Boolean(result?.interview_scheduled);
+  const interviewInProgress = interviewSessionStatus === "in_progress";
+  const interviewCompleted = Boolean(result?.interview_completed);
+  const finalDecision = result?.final_decision || null;
+  const showStartInterview = interviewReady && !interviewCompleted && !finalDecision;
+  const canScheduleInterview =
+    Boolean(result?.shortlisted) && !interviewInProgress && !interviewCompleted && !finalDecision;
+
+  let interviewStepDescription = "Shortlist required first";
+  if (finalDecision === "selected") {
+    interviewStepDescription = "HR marked your application as selected";
+  } else if (finalDecision === "rejected") {
+    interviewStepDescription = "HR completed the final review";
+  } else if (interviewCompleted) {
+    interviewStepDescription = "Interview submitted and waiting for HR review";
+  } else if (interviewInProgress) {
+    interviewStepDescription = "Interview session is active";
+  } else if (interviewReady) {
+    interviewStepDescription = "Interview access unlocked";
+  } else if (interviewScheduled) {
+    interviewStepDescription = "Interview scheduled";
+  } else if (result?.shortlisted) {
+    interviewStepDescription = "Pick interview date to unlock access";
+  }
 
   async function loadDashboard(jobId) {
     setLoading(true);
@@ -145,9 +172,15 @@ export default function CandidateDashboardPage() {
       completed: Boolean(result),
     },
     {
-      title: "Interview Ready",
-      description: result?.shortlisted ? "Eligible to schedule interview" : "Shortlist required first",
-      completed: Boolean(result?.interview_link),
+      title: "Interview Stage",
+      description: interviewStepDescription,
+      completed: Boolean(
+        result?.shortlisted ||
+          interviewScheduled ||
+          interviewReady ||
+          interviewCompleted ||
+          finalDecision
+      ),
     },
   ];
 
@@ -182,12 +215,20 @@ export default function CandidateDashboardPage() {
             <Play size={18} className="text-blue-600" />
             <span>Practice Mode</span>
           </Link>
-          {interviewRoute ? (
+          {showStartInterview ? (
             <Link
               to={interviewRoute}
               className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-lg shadow-blue-200 dark:shadow-none flex items-center space-x-2"
             >
-              <span>Start Real Interview</span>
+              <span>{interviewInProgress ? "Resume Interview" : "Start Scheduled Interview"}</span>
+              <ArrowRight size={18} />
+            </Link>
+          ) : interviewCompleted || finalDecision ? (
+            <Link
+              to={applicationStatusRoute}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-lg shadow-blue-200 dark:shadow-none flex items-center space-x-2"
+            >
+              <span>{finalDecision ? "View Final Outcome" : "View Application Status"}</span>
               <ArrowRight size={18} />
             </Link>
           ) : null}
@@ -254,6 +295,7 @@ export default function CandidateDashboardPage() {
                     </div>
                     <div className="text-right text-sm text-slate-600 dark:text-slate-300">
                       <p>Qualify score: <span className="font-bold">{selectedJd.qualify_score}%</span></p>
+                      <p>Min academic: <span className="font-bold">{Number(selectedJd.min_academic_percent || 0)}%</span></p>
                       <p>Questions: <span className="font-bold">{selectedJd.total_questions}</span></p>
                     </div>
                   </div>
@@ -395,38 +437,57 @@ export default function CandidateDashboardPage() {
                   <div className="max-w-xl">
                     <h3 className="text-2xl font-bold font-display">Interview Scheduling</h3>
                     <p className="text-blue-100 mt-2">
-                      {result.shortlisted
+                      {finalDecision === "selected"
+                        ? "HR has completed the final review. Your application has been marked as selected."
+                        : finalDecision === "rejected"
+                        ? "HR has completed the final review for this application."
+                        : interviewCompleted
+                        ? "Your interview has been submitted successfully. The recruitment team is now reviewing it."
+                        : interviewInProgress
+                        ? "Your live interview session is already active. Resume it from the interview action above."
+                        : result.interview_ready
+                        ? "Your interview is unlocked. You can use the scheduled interview link now."
+                        : result.shortlisted
                         ? "Pick a time slot to unlock the live AI interview link."
                         : "This JD is not shortlisted yet. Improve the resume and upload again before scheduling."}
                     </p>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 w-4 h-4" />
-                      <input
-                        type="datetime-local"
-                        value={scheduleDate}
-                        onChange={(event) => setScheduleDate(event.target.value)}
-                        disabled={!result.shortlisted || scheduling}
-                        className="pl-10 pr-4 py-3 rounded-2xl text-slate-900 bg-white outline-none min-w-[250px]"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleScheduleInterview}
-                      disabled={!result.shortlisted || scheduling}
-                      className={cn(
-                        "px-8 py-4 rounded-2xl font-black text-lg transition-all",
-                        result.shortlisted
-                          ? "bg-white text-blue-600 hover:scale-[1.01] shadow-xl shadow-blue-900/20"
-                          : "bg-blue-300 text-blue-100 cursor-not-allowed",
-                      )}
+                  {interviewCompleted || finalDecision ? (
+                    <Link
+                      to={applicationStatusRoute}
+                      className="inline-flex items-center justify-center px-8 py-4 rounded-2xl bg-white text-blue-600 font-black text-lg hover:scale-[1.01] shadow-xl shadow-blue-900/20 transition-all"
                     >
-                      {scheduling ? "Scheduling..." : result.interview_link ? "Reschedule" : "Schedule Interview"}
-                    </button>
-                  </div>
+                      {finalDecision ? "Open Final Outcome" : "Open Application Status"}
+                    </Link>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 w-4 h-4" />
+                        <input
+                          type="datetime-local"
+                          value={scheduleDate}
+                          onChange={(event) => setScheduleDate(event.target.value)}
+                          disabled={!canScheduleInterview || scheduling}
+                          className="pl-10 pr-4 py-3 rounded-2xl text-slate-900 bg-white outline-none min-w-[250px]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleScheduleInterview}
+                        disabled={!canScheduleInterview || scheduling}
+                        className={cn(
+                          "px-8 py-4 rounded-2xl font-black text-lg transition-all",
+                          result.shortlisted
+                            ? "bg-white text-blue-600 hover:scale-[1.01] shadow-xl shadow-blue-900/20"
+                            : "bg-blue-300 text-blue-100 cursor-not-allowed",
+                        )}
+                      >
+                        {scheduling ? "Scheduling..." : interviewScheduled ? "Reschedule" : "Schedule Interview"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {result.interview_date ? (
+                {interviewScheduled ? (
                   <p className="mt-4 text-sm text-blue-100">
                     Scheduled for: <span className="font-bold">{new Date(result.interview_date).toLocaleString()}</span>
                   </p>
@@ -456,6 +517,14 @@ export default function CandidateDashboardPage() {
               <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
                 <h5 className="text-sm font-bold text-slate-900 dark:text-white mb-1">Experience Check</h5>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{Math.round(Number(explanation?.experience_score || 0))}%</p>
+              </div>
+              <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <h5 className="text-sm font-bold text-slate-900 dark:text-white mb-1">Academic Cutoff</h5>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {Number(explanation?.min_academic_percent_required || 0) > 0
+                    ? `${explanation?.academic_cutoff_met ? "Passed" : "Not met"} (${explanation?.detected_academic_percent != null ? Math.round(Number(explanation.detected_academic_percent)) + "%" : "not detected"} / ${Math.round(Number(explanation.min_academic_percent_required || 0))}%)`
+                    : "No cutoff configured"}
+                </p>
               </div>
             </div>
           </div>

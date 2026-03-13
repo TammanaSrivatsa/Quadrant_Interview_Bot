@@ -19,7 +19,7 @@ export default function HRProctoringPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await hrApi.prorectingTimeline(sessionId);
+      const data = await hrApi.proctoringTimeline(sessionId);
       setTimeline(data);
     } catch (loadError) {
       setError(loadError.message);

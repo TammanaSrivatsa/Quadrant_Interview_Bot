@@ -51,6 +51,10 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN cutoff_score FLOAT DEFAULT 65 NOT NULL"))
             if "question_count" not in columns:
                 conn.execute(text("ALTER TABLE jobs ADD COLUMN question_count INTEGER DEFAULT 8 NOT NULL"))
+            if "education_requirement" not in columns:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN education_requirement VARCHAR(50)"))
+            if "experience_requirement" not in columns:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN experience_requirement INTEGER DEFAULT 0"))
 
             # candidate identifiers
             rows = conn.execute(text("PRAGMA table_info(candidates)")).fetchall()
@@ -93,6 +97,10 @@ def ensure_schema() -> None:
             # new columns on interview_sessions
             rows = conn.execute(text("PRAGMA table_info(interview_sessions)")).fetchall()
             session_cols = {row[1] for row in rows}
+            if "per_question_seconds" not in session_cols:
+                conn.execute(
+                    text("ALTER TABLE interview_sessions ADD COLUMN per_question_seconds INTEGER DEFAULT 60 NOT NULL")
+                )
             if "total_time_seconds" not in session_cols:
                 conn.execute(
                     text("ALTER TABLE interview_sessions ADD COLUMN total_time_seconds INTEGER DEFAULT 1200 NOT NULL")

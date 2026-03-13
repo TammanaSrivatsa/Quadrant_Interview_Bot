@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { ArrowLeft, Upload, Check, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { hrApi } from "../services/api";
@@ -8,7 +8,6 @@ export default function HRJdUploadPage() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [extractedData, setExtractedData] = useState(null);
   const [confirmData, setConfirmData] = useState({
     title: "",
@@ -22,7 +21,6 @@ export default function HRJdUploadPage() {
     if (!selectedFile) return;
 
     setError("");
-    setMessage("");
     setFile(selectedFile);
     setLoading(true);
 
@@ -49,7 +47,6 @@ export default function HRJdUploadPage() {
 
     try {
       await hrApi.confirmJd(confirmData);
-      setMessage("JD successfully uploaded and confirmed!");
       setStep("success");
     } catch (confirmError) {
       setError(confirmError.message);
@@ -69,7 +66,6 @@ export default function HRJdUploadPage() {
       location: "",
     });
     setError("");
-    setMessage("");
   }
 
   return (

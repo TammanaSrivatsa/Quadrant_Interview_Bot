@@ -394,6 +394,46 @@ def hr_update_jd(
     return {"ok": True, "jd": _serialize_jd_config(jd)}
 
 
+@router.delete("/hr/jds/{jd_id}")
+def hr_delete_jd(
+    jd_id: int,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    jd = _get_hr_owned_jd_or_404(db, jd_id, current_user.user_id)
+    legacy_job = (
+        db.query(JobDescription)
+        .filter(JobDescription.id == jd_id, JobDescription.company_id == current_user.user_id)
+        .first()
+    )
+
+    applications_count = db.query(Result).filter(Result.job_id == jd_id).count()
+    if applications_count:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a JD that already has candidate applications",
+        )
+
+    selected_candidates_count = db.query(Candidate).filter(Candidate.selected_jd_id == jd_id).count()
+    if selected_candidates_count:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a JD that is currently selected by candidates",
+        )
+
+    deleted_upload = False
+    if legacy_job and legacy_job.jd_text:
+        deleted_upload = safe_delete_upload(legacy_job.jd_text)
+    elif jd.jd_text:
+        deleted_upload = safe_delete_upload(jd.jd_text)
+
+    if legacy_job:
+        db.delete(legacy_job)
+    db.delete(jd)
+    db.commit()
+    return {"ok": True, "jd_id": jd_id, "deleted_upload": deleted_upload}
+
+
 # 1) What this does: returns the HR dashboard payload with jobs and shortlisted candidates.
 # 2) Why needed: drives the main HR home page without extra round-trips.
 # 3) How it works: loads jobs, picks the selected one, and returns derived summaries.

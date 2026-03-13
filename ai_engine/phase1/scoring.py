@@ -6,7 +6,12 @@ import re
 from collections.abc import Mapping
 from typing import Iterable
 
-from ai_engine.phase1.matching import calculate_semantic_score, extract_education, extract_experience
+from ai_engine.phase1.matching import (
+    calculate_semantic_score,
+    extract_academic_percentages,
+    extract_education,
+    extract_experience,
+)
 
 SKILL_ALIASES: dict[str, list[str]] = {
     "python": ["python"],
@@ -180,6 +185,63 @@ def _resume_quality_score(resume_text: str) -> tuple[float, str]:
     return 60.0, "Resume text is present but missing clear structure."
 
 
+def _academic_cutoff_status(
+    resume_text: str,
+    min_academic_percent: float,
+) -> tuple[dict[str, float | None], float | None, str | None, float, bool, str]:
+    academic_percentages = extract_academic_percentages(resume_text or "")
+
+    detected_percent: float | None = None
+    detected_level: str | None = None
+    for level in ("engineering", "intermediate", "10th"):
+        value = academic_percentages.get(level)
+        if value is None:
+            continue
+        detected_percent = float(value)
+        detected_level = level
+        break
+
+    required_percent = max(0.0, float(min_academic_percent or 0.0))
+    if required_percent <= 0:
+        return (
+            academic_percentages,
+            detected_percent,
+            detected_level,
+            100.0,
+            True,
+            "No academic cutoff configured.",
+        )
+
+    if detected_percent is None:
+        return (
+            academic_percentages,
+            None,
+            None,
+            0.0,
+            False,
+            f"Academic cutoff not met: required {required_percent:.0f}%, but no academic percentage was detected.",
+        )
+
+    if detected_percent >= required_percent:
+        return (
+            academic_percentages,
+            detected_percent,
+            detected_level,
+            100.0,
+            True,
+            f"Academic cutoff satisfied: required {required_percent:.0f}%, found {detected_percent:.2f}% ({detected_level}).",
+        )
+
+    return (
+        academic_percentages,
+        detected_percent,
+        detected_level,
+        0.0,
+        False,
+        f"Academic cutoff not met: required {required_percent:.0f}%, found {detected_percent:.2f}% ({detected_level}).",
+    )
+
+
 def _weighted_skill_score(skill_scores: Mapping[str, int] | None, matched_skills: list[str]) -> float:
     if not skill_scores:
         return 100.0
@@ -205,9 +267,14 @@ def _resume_reasons(
     experience_score: float,
     education_score: float,
     semantic_score: float,
+    academic_cutoff_met: bool,
+    academic_cutoff_reason: str,
     resume_quality_reason: str,
 ) -> list[str]:
     reasons: list[str] = []
+    if not academic_cutoff_met:
+        reasons.append(academic_cutoff_reason)
+
     if screening_band == "strong_shortlist":
         reasons.append("Overall profile is strong enough for direct shortlist review.")
     elif screening_band == "review_shortlist":
@@ -237,6 +304,7 @@ def compute_resume_scorecard(
     education_requirement: str | None = None,
     experience_requirement: int = 0,
     semantic_similarity: float | None = None,
+    min_academic_percent: float = 0.0,
 ) -> dict[str, object]:
     """Build a stable explainable resume scorecard with a 0-100 final score."""
 
@@ -246,6 +314,14 @@ def compute_resume_scorecard(
 
     weighted_skill_score = _weighted_skill_score(jd_skill_scores, list(skill_match["matched_skills"]))
     semantic_score = _semantic_percentage(semantic_similarity, jd_text, resume_text)
+    (
+        academic_percentages,
+        detected_academic_percent,
+        detected_academic_level,
+        academic_cutoff_score,
+        academic_cutoff_met,
+        academic_cutoff_reason,
+    ) = _academic_cutoff_status(resume_text, min_academic_percent)
 
     detected_experience_years = max(0, int(extract_experience(resume_text)))
     required_years = max(0, int(experience_requirement or 0))
@@ -284,13 +360,14 @@ def compute_resume_scorecard(
     resume_quality_score, resume_quality_reason = _resume_quality_score(resume_text)
 
     final_resume_score = _clamp_score(
-        (weighted_skill_score * 0.55)
+        (weighted_skill_score * 0.50)
         + (semantic_score * 0.15)
         + (experience_score * 0.15)
         + (education_score * 0.10)
+        + (academic_cutoff_score * 0.05)
         + (resume_quality_score * 0.05)
     )
-    screening_band = _screening_band(final_resume_score)
+    screening_band = _screening_band(final_resume_score) if academic_cutoff_met else "reject"
 
     reasons = _resume_reasons(
         screening_band=screening_band,
@@ -299,6 +376,8 @@ def compute_resume_scorecard(
         experience_score=experience_score,
         education_score=education_score,
         semantic_score=semantic_score,
+        academic_cutoff_met=academic_cutoff_met,
+        academic_cutoff_reason=academic_cutoff_reason,
         resume_quality_reason=resume_quality_reason,
     )
 
@@ -311,6 +390,13 @@ def compute_resume_scorecard(
         "experience_score": experience_score,
         "education_score": education_score,
         "resume_quality_score": resume_quality_score,
+        "academic_cutoff_score": academic_cutoff_score,
+        "academic_cutoff_met": academic_cutoff_met,
+        "academic_cutoff_reason": academic_cutoff_reason,
+        "min_academic_percent_required": max(0.0, float(min_academic_percent or 0.0)),
+        "detected_academic_percent": detected_academic_percent,
+        "detected_academic_level": detected_academic_level,
+        "academic_percentages": academic_percentages,
         "matched_percentage": float(skill_match["matched_percentage"]),
         "matched_skills": list(skill_match["matched_skills"]),
         "missing_skills": list(skill_match["missing_skills"]),

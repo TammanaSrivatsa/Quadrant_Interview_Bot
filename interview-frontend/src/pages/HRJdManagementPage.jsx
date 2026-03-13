@@ -7,13 +7,12 @@ import {
   ChevronRight,
   Eye,
   Edit2,
-  Trash2,
   MoreVertical,
+  Trash2,
 } from "lucide-react";
 import MetricCard from "../components/MetricCard";
 import StatusBadge from "../components/StatusBadge";
 import { hrApi } from "../services/api";
-import { cn } from "../utils/utils";
 
 function buildInitialForm() {
   return {
@@ -42,15 +41,11 @@ export default function HRJdManagementPage() {
   const [jds, setJds] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [departmentFilter, setDepartmentFilter] = useState("all");
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-
   const [form, setForm] = useState(buildInitialForm());
   const [showForm, setShowForm] = useState(false);
   const [page, setPage] = useState(1);
@@ -58,45 +53,36 @@ export default function HRJdManagementPage() {
 
   const itemsPerPage = 10;
 
-  const departments = useMemo(() => {
-    return [
-      "all",
-      ...new Set(jds.map((jd) => jd.department || "Unspecified").filter(Boolean)),
-    ];
-  }, [jds]);
-
   const filteredJds = useMemo(() => {
-    let result = jds;
-
     const needle = search.trim().toLowerCase();
-    if (needle) {
-      result = result.filter((jd) =>
-        [jd.title, jd.jd_text, jd.id?.toString()].some((value) =>
-          String(value || "").toLowerCase().includes(needle)
-        )
-      );
+    if (!needle) {
+      return jds;
     }
 
-    if (statusFilter !== "all") {
-      result = result.filter(
-        (jd) => (jd.active ? "active" : "inactive") === statusFilter
-      );
-    }
-
-    if (departmentFilter !== "all") {
-      result = result.filter(
-        (jd) => (jd.department || "Unspecified") === departmentFilter
-      );
-    }
-
-    return result;
-  }, [jds, search, statusFilter, departmentFilter]);
+    return jds.filter((jd) =>
+      [jd.title, jd.jd_text, jd.id?.toString()].some((value) =>
+        String(value || "").toLowerCase().includes(needle)
+      )
+    );
+  }, [jds, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredJds.length / itemsPerPage));
   const paginatedJds = filteredJds.slice(
     (page - 1) * itemsPerPage,
     page * itemsPerPage
   );
+
+  const averageQualifyScore = jds.length
+    ? `${Math.round(
+        jds.reduce((sum, jd) => sum + Number(jd.qualify_score || 0), 0) / jds.length
+      )}%`
+    : "0%";
+
+  const averageQuestions = jds.length
+    ? (
+        jds.reduce((sum, jd) => sum + Number(jd.total_questions || 0), 0) / jds.length
+      ).toFixed(1)
+    : "0.0";
 
   const loadJds = useCallback(async () => {
     setLoading(true);
@@ -118,7 +104,7 @@ export default function HRJdManagementPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, departmentFilter]);
+  }, [search]);
 
   async function handleSelectJd(jdId) {
     setError("");
@@ -149,7 +135,6 @@ export default function HRJdManagementPage() {
     setSelectedId(null);
     setForm(buildInitialForm());
     setShowForm(false);
-    setMessage("");
     setError("");
     setOpenMenu(null);
   }
@@ -166,6 +151,12 @@ export default function HRJdManagementPage() {
     } catch {
       setSaving(false);
       setError("Weights JSON is invalid.");
+      return;
+    }
+
+    if (!parsedWeights || typeof parsedWeights !== "object" || Array.isArray(parsedWeights)) {
+      setSaving(false);
+      setError("Weights JSON must be an object.");
       return;
     }
 
@@ -210,39 +201,29 @@ export default function HRJdManagementPage() {
   }
 
   async function handleDeleteJd(jdId) {
-    if (!window.confirm("Are you sure you want to delete this JD?")) return;
+    const confirmed = window.confirm(
+      "Delete this JD? This only works when no candidates have applied to it."
+    );
+    if (!confirmed) {
+      return;
+    }
 
-    setDeleting(jdId);
+    setDeletingId(jdId);
     setError("");
     setMessage("");
 
     try {
       await hrApi.deleteJd(jdId);
-      await loadJds();
-      setMessage("JD deleted successfully.");
-      setOpenMenu(null);
-
       if (selectedId === jdId) {
         resetForm();
       }
+      await loadJds();
+      setMessage("JD deleted successfully.");
+      setOpenMenu(null);
     } catch (deleteError) {
       setError(deleteError.message || "Failed to delete JD.");
     } finally {
-      setDeleting(null);
-    }
-  }
-
-  async function handleToggleStatus(jdId, currentActive) {
-    setError("");
-    setMessage("");
-
-    try {
-      await hrApi.updateJd(jdId, { active: !currentActive });
-      await loadJds();
-      setMessage(`JD ${currentActive ? "deactivated" : "activated"} successfully.`);
-      setOpenMenu(null);
-    } catch (toggleError) {
-      setError(toggleError.message || "Failed to update JD status.");
+      setDeletingId(null);
     }
   }
 
@@ -288,60 +269,20 @@ export default function HRJdManagementPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MetricCard title="Total JDs" value={jds.length} color="blue" />
-        <MetricCard
-          title="Average Qualify Score"
-          value={
-            jds.length
-              ? `${Math.round(
-                  jds.reduce((sum, jd) => sum + Number(jd.qualify_score || 0), 0) /
-                    jds.length
-                )}%`
-              : "0%"
-          }
-          color="green"
-        />
-        <MetricCard
-          title="Active JDs"
-          value={jds.filter((jd) => jd.active).length}
-          color="purple"
-        />
+        <MetricCard title="Average Qualify Score" value={averageQualifyScore} color="green" />
+        <MetricCard title="Average Questions" value={averageQuestions} color="purple" />
       </div>
 
       <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search JDs by title, text or ID..."
-              className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-
-          <select
-            className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">Status: All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-
-          <select
-            className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white"
-            value={departmentFilter}
-            onChange={(event) => setDepartmentFilter(event.target.value)}
-          >
-            <option value="all">Department: All</option>
-            {departments.slice(1).map((dept) => (
-              <option key={dept} value={dept}>
-                {dept}
-              </option>
-            ))}
-          </select>
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <input
+            type="text"
+            placeholder="Search JDs by title, text or ID..."
+            className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
 
         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
@@ -361,13 +302,7 @@ export default function HRJdManagementPage() {
                   Title
                 </th>
                 <th className="px-6 py-5 text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                  Department
-                </th>
-                <th className="px-6 py-5 text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                  Experience
-                </th>
-                <th className="px-6 py-5 text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                  Status
+                  Min Academic
                 </th>
                 <th className="px-6 py-5 text-[10px] text-slate-400 uppercase tracking-widest font-black">
                   Questions
@@ -385,7 +320,7 @@ export default function HRJdManagementPage() {
               {!paginatedJds.length ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-sm text-slate-500 dark:text-slate-400"
                   >
                     No JDs found. Create one to get started.
@@ -404,9 +339,7 @@ export default function HRJdManagementPage() {
                     </td>
 
                     <td className="px-6 py-4">
-                      <p className="font-bold text-slate-900 dark:text-white">
-                        {jd.title}
-                      </p>
+                      <p className="font-bold text-slate-900 dark:text-white">{jd.title}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
                         {jd.jd_text}
                       </p>
@@ -414,27 +347,8 @@ export default function HRJdManagementPage() {
 
                     <td className="px-6 py-4">
                       <p className="text-sm text-slate-600 dark:text-slate-300">
-                        {jd.department || "–"}
+                        {Number(jd.min_academic_percent ?? 0)}%
                       </p>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-600 dark:text-slate-300">
-                        {jd.experience_required || "–"}
-                      </p>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-3 py-1 rounded-full text-xs font-bold",
-                          jd.active
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                            : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                        )}
-                      >
-                        {jd.active ? "Active" : "Inactive"}
-                      </span>
                     </td>
 
                     <td className="px-6 py-4">
@@ -480,29 +394,13 @@ export default function HRJdManagementPage() {
 
                           <button
                             type="button"
-                            onClick={() => handleToggleStatus(jd.id, jd.active)}
-                            className="flex items-center space-x-3 w-full px-4 py-3 text-left text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                          >
-                            <span
-                              className={cn(
-                                "inline-block w-4 h-4 rounded-full",
-                                jd.active ? "bg-emerald-500" : "bg-slate-400"
-                              )}
-                            />
-                            <span className="text-sm font-medium">
-                              {jd.active ? "Deactivate" : "Activate"}
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
                             onClick={() => handleDeleteJd(jd.id)}
-                            disabled={deleting === jd.id}
-                            className="flex items-center space-x-3 w-full px-4 py-3 text-left text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                            disabled={deletingId === jd.id}
+                            className="flex items-center space-x-3 w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60"
                           >
                             <Trash2 size={16} />
                             <span className="text-sm font-medium">
-                              {deleting === jd.id ? "Deleting..." : "Delete"}
+                              {deletingId === jd.id ? "Deleting..." : "Delete"}
                             </span>
                           </button>
                         </div>

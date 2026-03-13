@@ -26,7 +26,7 @@ from models import (
     ProctorEvent,
     Result,
 )
-from routes.common import interview_entry_url
+from routes.common import interview_access_state, interview_entry_url
 from routes.dependencies import SessionUser, require_role
 from routes.schemas import InterviewAnswerBody, InterviewEventBody, InterviewStartBody
 from utils.proctoring_cv import analyze_frame, compare_signatures, should_store_periodic
@@ -186,6 +186,19 @@ def _resolve_candidate_result(db: Session, candidate_id: int, result_id: int | N
 
     result = (
         db.query(Result)
+        .filter(
+            Result.candidate_id == candidate_id,
+            Result.shortlisted.is_(True),
+            Result.interview_date.is_not(None),
+        )
+        .order_by(Result.id.desc())
+        .first()
+    )
+    if result:
+        return result
+
+    result = (
+        db.query(Result)
         .filter(Result.candidate_id == candidate_id, Result.shortlisted.is_(True))
         .order_by(Result.id.desc())
         .first()
@@ -197,6 +210,21 @@ def _resolve_candidate_result(db: Session, candidate_id: int, result_id: int | N
     if not result:
         raise HTTPException(status_code=404, detail="No interview context found for candidate")
     return result
+
+
+def _ensure_interview_ready(result: Result) -> None:
+    access = interview_access_state(result)
+    if access["interview_ready"]:
+        return
+
+    if access["interview_locked_reason"] == "shortlist_required":
+        raise HTTPException(status_code=403, detail="Only shortlisted candidates can start interviews")
+    if access["interview_locked_reason"] == "already_started":
+        raise HTTPException(status_code=409, detail="Interview session is already in progress")
+    if access["interview_locked_reason"] == "already_completed":
+        raise HTTPException(status_code=400, detail="Interview session has already been submitted")
+
+    raise HTTPException(status_code=400, detail="Schedule your interview before starting")
 
 
 def _resolve_result_by_token(db: Session, candidate_id: int, token: str) -> Result:
@@ -304,6 +332,7 @@ def interview_start(
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     result = _resolve_candidate_result(db, candidate.id, payload.result_id)
+    _ensure_interview_ready(result)
     job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
     configured_max_questions = (
         int(payload.max_questions)
@@ -501,6 +530,7 @@ def interview_answer(
 def interview_transcribe(
     audio: UploadFile = File(...),
     language: str = Form("en"),
+    context_hint: str = Form(""),
     current_user: SessionUser = Depends(require_role("candidate")),
 ) -> dict[str, object]:
     _ = current_user
@@ -509,7 +539,12 @@ def interview_transcribe(
         raise HTTPException(status_code=400, detail="Audio payload is empty")
 
     try:
-        transcript = transcribe_audio_bytes(raw, language=language)
+        transcript = transcribe_audio_bytes(
+            raw,
+            language=language,
+            filename=audio.filename,
+            context_hint=context_hint,
+        )
     except Exception as exc:
         message = str(exc).strip() or "Unknown transcription error."
         if len(message) > 500:
@@ -519,7 +554,7 @@ def interview_transcribe(
             detail=f"Transcription failed. {message}",
         ) from exc
 
-    return {"ok": True, "text": transcript}
+    return {"ok": True, **transcript}
 
 
 @router.post("/interview/{token}/event")

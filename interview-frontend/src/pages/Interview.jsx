@@ -91,11 +91,14 @@ export default function Interview() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [transcriptionWarning, setTranscriptionWarning] = useState("");
   const [previewReady, setPreviewReady] = useState(false);
   const [previewWarning, setPreviewWarning] = useState("");
+  const [proctorWarning, setProctorWarning] = useState("");
 
   const videoRef = useRef(null);
   const autoSubmittedRef = useRef(false);
+  const baselineCapturedRef = useRef(false);
   const streamRef = useRef(null);
   const audioStreamRef = useRef(null);
   const recorderRef = useRef(null);
@@ -116,12 +119,15 @@ export default function Interview() {
         return;
       }
 
+      setTranscriptionWarning("");
       setSessionId(response.session_id);
       setCurrentQuestion(response.current_question);
       setQuestionNumber(response.question_number || 1);
       setMaxQuestions(response.max_questions || 1);
       setTimeLeft(response.time_limit_seconds || 0);
       setTotalTimeLeft(response.remaining_total_seconds || 0);
+      setProctorWarning("");
+      baselineCapturedRef.current = false;
       autoSubmittedRef.current = false;
     } catch (loadError) {
       setError(loadError.message);
@@ -256,6 +262,7 @@ export default function Interview() {
       setTimeLeft(response.time_limit_seconds || 0);
       setTotalTimeLeft(response.remaining_total_seconds || 0);
       setAnswer("");
+      setTranscriptionWarning("");
       setIsRecording(false);
       setIsTranscribing(false);
       autoSubmittedRef.current = false;
@@ -270,7 +277,7 @@ export default function Interview() {
   const stopRecordingAndTranscribe = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) {
-      return "";
+      return { text: "", lowConfidence: true, confidence: null };
     }
 
     setIsRecording(false);
@@ -294,7 +301,7 @@ export default function Interview() {
             releaseAudioStream();
 
             if (!audioBlob.size) {
-              resolve("");
+              resolve({ text: "", lowConfidence: true, confidence: null });
               return;
             }
 
@@ -304,9 +311,14 @@ export default function Interview() {
 
             formData.append("audio", audioBlob, `answer.${extension}`);
             formData.append("language", preferredLanguage);
+            formData.append("context_hint", String(currentQuestion?.text || ""));
 
             const response = await interviewApi.transcribe(formData);
-            resolve(String(response?.text || "").trim());
+            resolve({
+              text: String(response?.text || "").trim(),
+              lowConfidence: Boolean(response?.low_confidence),
+              confidence: typeof response?.confidence === "number" ? response.confidence : null,
+            });
           } catch (transcriptionError) {
             reject(transcriptionError);
           }
@@ -319,7 +331,7 @@ export default function Interview() {
     } finally {
       setIsTranscribing(false);
     }
-  }, [releaseAudioStream]);
+  }, [currentQuestion, releaseAudioStream]);
 
   const startRecording = useCallback(async () => {
     if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined") {
@@ -328,6 +340,7 @@ export default function Interview() {
     }
 
     setError("");
+    setTranscriptionWarning("");
 
     try {
       let recordingStream;
@@ -380,18 +393,28 @@ export default function Interview() {
 
     try {
       const transcript = await stopRecordingAndTranscribe();
-      if (!transcript) {
+      if (!transcript.text) {
         setError("No speech was detected. Try again or edit your answer manually.");
         return;
       }
 
-      setAnswer((current) => appendTranscript(current, transcript));
+      if (transcript.lowConfidence) {
+        const confidenceSuffix =
+          typeof transcript.confidence === "number"
+            ? ` (confidence ${(transcript.confidence * 100).toFixed(0)}%)`
+            : "";
+        setTranscriptionWarning(`Whisper was unsure about parts of this answer${confidenceSuffix}. Review the transcript before submitting.`);
+      } else {
+        setTranscriptionWarning("");
+      }
+
+      setAnswer((current) => appendTranscript(current, transcript.text));
     } catch (recordingError) {
       setError(recordingError.message);
     }
   }, [isRecording, isSubmitting, isTranscribing, startRecording, stopRecordingAndTranscribe]);
 
-  const captureAndUploadFrame = useCallback(async () => {
+  const captureAndUploadFrame = useCallback(async (eventType = "scan") => {
     if (!sessionId || !videoRef.current || !previewReady) return;
 
     try {
@@ -403,22 +426,48 @@ export default function Interview() {
       canvas.height = videoRef.current.videoHeight || 240;
       ctx.drawImage(videoRef.current, 0, 0);
 
-      canvas.toBlob(
-        async (blob) => {
-          if (!blob) return;
-          try {
-            await proctorApi.uploadFrame(sessionId, blob);
-          } catch {
-            // Silently fail frame uploads to not interrupt the interview
-          }
-        },
-        "image/jpeg",
-        0.7
-      );
-    } catch {
-      // Silently fail frame capture to not interrupt the interview
+      const blob = await new Promise((resolve) => {
+        canvas.toBlob(resolve, "image/jpeg", 0.7);
+      });
+
+      if (!blob) {
+        setProctorWarning("Webcam frame capture failed. Check camera access and try again.");
+        return;
+      }
+
+      const response = await proctorApi.uploadFrame(sessionId, blob, eventType);
+      if (response?.requested_event_type === "baseline") {
+        if (response?.baseline_ready) {
+          setProctorWarning("");
+        } else if (Array.isArray(response?.frame_reasons) && response.frame_reasons.length) {
+          setProctorWarning(response.frame_reasons.join(" "));
+        } else {
+          setProctorWarning("Baseline capture needs a clear single-face webcam frame.");
+        }
+        return;
+      }
+
+      if (response?.paused || response?.warning_triggered || response?.action === "adjust") {
+        if (Array.isArray(response?.frame_reasons) && response.frame_reasons.length) {
+          setProctorWarning(response.frame_reasons.join(" "));
+        } else {
+          setProctorWarning("Webcam monitoring detected an issue. Keep your face centered and visible.");
+        }
+        return;
+      }
+
+      setProctorWarning("");
+    } catch (uploadError) {
+      console.error("Proctor frame upload failed", uploadError);
+      setProctorWarning(uploadError?.message || "Webcam monitoring upload failed. Check backend connectivity and camera access.");
     }
   }, [sessionId, previewReady]);
+
+  useEffect(() => {
+    if (!sessionId || !previewReady || baselineCapturedRef.current) return;
+    baselineCapturedRef.current = true;
+    void captureAndUploadFrame("baseline");
+  }, [sessionId, previewReady, captureAndUploadFrame]);
 
   const handleSubmit = useCallback(async (skipCurrent = false) => {
     if (isSubmitting || isTranscribing) {
@@ -430,9 +479,19 @@ export default function Interview() {
     if (isRecording) {
       try {
         const transcript = await stopRecordingAndTranscribe();
-        nextAnswer = appendTranscript(answer, transcript);
+        nextAnswer = appendTranscript(answer, transcript.text);
 
-        if (transcript) {
+        if (transcript.lowConfidence) {
+          const confidenceSuffix =
+            typeof transcript.confidence === "number"
+              ? ` (confidence ${(transcript.confidence * 100).toFixed(0)}%)`
+              : "";
+          setTranscriptionWarning(`Whisper was unsure about parts of this answer${confidenceSuffix}. Review the transcript before submitting.`);
+        } else {
+          setTranscriptionWarning("");
+        }
+
+        if (transcript.text) {
           setAnswer(nextAnswer);
         }
       } catch (submitError) {
@@ -460,7 +519,7 @@ export default function Interview() {
 
     // Capture and upload frames every 15 seconds for proctoring
     const frameInterval = setInterval(() => {
-      captureAndUploadFrame();
+      void captureAndUploadFrame("scan");
     }, 15000);
 
     return () => clearInterval(frameInterval);
@@ -480,6 +539,7 @@ export default function Interview() {
         <div className="lg:col-span-2 space-y-6">
           {error ? <p className="alert error">{error}</p> : null}
           {previewWarning ? <p className="rounded-2xl border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3">{previewWarning}</p> : null}
+          {proctorWarning ? <p className="rounded-2xl border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3">{proctorWarning}</p> : null}
 
           <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -547,6 +607,11 @@ export default function Interview() {
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
               Voice-first mode uses Whisper transcription. Typed edits are optional.
             </p>
+            {transcriptionWarning ? (
+              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                {transcriptionWarning}
+              </p>
+            ) : null}
 
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3 w-full sm:w-auto">

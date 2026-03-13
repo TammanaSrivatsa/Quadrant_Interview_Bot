@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Users, Target, BookOpen, FileText } from "lucide-react";
+import { ArrowLeft, Users, Target, FileText } from "lucide-react";
 import MetricCard from "../components/MetricCard";
 import StatusBadge from "../components/StatusBadge";
 import { hrApi } from "../services/api";
@@ -20,15 +20,13 @@ export default function HRJdDetailPage() {
       const detailResponse = await hrApi.getJd(jdId);
       setJd(detailResponse.jd);
 
-      // Load candidates for this JD
       try {
         const candidatesResponse = await hrApi.listCandidates();
         const jdCandidates = (candidatesResponse.candidates || []).filter(
-          (c) => c.applied_jd?.id === parseInt(jdId) || c.role === detailResponse.jd.title
+          (candidate) => Number(candidate.job?.id) === Number(jdId)
         );
         setCandidates(jdCandidates);
       } catch {
-        // If candidates endpoint fails, just show empty candidates list
         setCandidates([]);
       }
     } catch (loadError) {
@@ -57,9 +55,15 @@ export default function HRJdDetailPage() {
   const requiredSkills = jd.weights_json ? Object.keys(jd.weights_json) : [];
   const totalApplicants = candidates.length;
   const shortlistedCount = candidates.filter(
-    (c) => c.finalDecision?.key === "shortlisted" || c.finalDecision?.key === "selected"
+    (candidate) =>
+      candidate.finalDecision?.key === "shortlisted" ||
+      candidate.finalDecision?.key === "selected"
   ).length;
-  const rejectedCount = candidates.filter((c) => c.finalDecision?.key === "rejected").length;
+  const rejectedCount = candidates.filter(
+    (candidate) => candidate.finalDecision?.key === "rejected"
+  ).length;
+  const projectQuestionRatio = Number(jd.project_question_ratio || 0);
+  const theoryQuestionRatio = Math.max(0, 1 - projectQuestionRatio);
 
   const tabs = [
     { id: "details", label: "JD Details", icon: FileText },
@@ -77,11 +81,13 @@ export default function HRJdDetailPage() {
           <ArrowLeft size={20} />
           <span>Back to JD Management</span>
         </Link>
-        <StatusBadge status={{ label: jd.active ? "Active" : "Inactive", tone: jd.active ? "success" : "secondary" }} />
+        <StatusBadge status={{ label: `JD #${jd.id}`, tone: "secondary" }} />
       </div>
 
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">{jd.title}</h1>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">
+          {jd.title}
+        </h1>
         <p className="text-slate-500 dark:text-slate-400 mt-2">JD ID: {jd.id}</p>
       </div>
 
@@ -117,7 +123,9 @@ export default function HRJdDetailPage() {
           {activeTab === "details" && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Description</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
+                  Description
+                </h3>
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-6 text-slate-700 dark:text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
                   {jd.jd_text}
                 </div>
@@ -125,29 +133,49 @@ export default function HRJdDetailPage() {
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Requirements</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
+                    Requirements
+                  </h3>
                   <div className="space-y-3">
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">Minimum Academic %</p>
-                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">{jd.min_academic_percent}%</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">
+                        Minimum Academic %
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+                        {jd.min_academic_percent}%
+                      </p>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">Qualify Score</p>
-                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">{jd.qualify_score}%</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">
+                        Qualify Score
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+                        {jd.qualify_score}%
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Interview Config</h3>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
+                    Interview Config
+                  </h3>
                   <div className="space-y-3">
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">Total Questions</p>
-                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">{jd.total_questions}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">
+                        Total Questions
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+                        {jd.total_questions}
+                      </p>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">Project Question Ratio</p>
-                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">{(jd.project_question_ratio * 100).toFixed(0)}%</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">
+                        Project Question Ratio
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+                        {(projectQuestionRatio * 100).toFixed(0)}%
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -158,24 +186,49 @@ export default function HRJdDetailPage() {
           {activeTab === "skills" && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Required Skills & Weightage</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
+                  Required Skills and Weightage
+                </h3>
                 {requiredSkills.length > 0 ? (
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {requiredSkills.map((skill) => (
-                      <div key={skill} className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 border border-blue-200 dark:border-blue-800">
-                        <p className="text-sm text-blue-600 dark:text-blue-400 uppercase tracking-widest font-bold">{skill}</p>
-                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-200 mt-2">{jd.weights_json[skill]}</p>
+                      <div
+                        key={skill}
+                        className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 border border-blue-200 dark:border-blue-800"
+                      >
+                        <p className="text-sm text-blue-600 dark:text-blue-400 uppercase tracking-widest font-bold">
+                          {skill}
+                        </p>
+                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-200 mt-2">
+                          {jd.weights_json[skill]}
+                        </p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-slate-500 dark:text-slate-400">No skills configured.</p>
+                  <p className="text-slate-500 dark:text-slate-400">
+                    No skills configured.
+                  </p>
                 )}
               </div>
 
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Optional Skills</h3>
-                <p className="text-slate-500 dark:text-slate-400">Optional skills configuration would appear here.</p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-6">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">
+                    Project Questions
+                  </p>
+                  <p className="text-3xl font-bold text-slate-900 dark:text-white mt-3">
+                    {(projectQuestionRatio * 100).toFixed(0)}%
+                  </p>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-6">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold">
+                    Theory Questions
+                  </p>
+                  <p className="text-3xl font-bold text-slate-900 dark:text-white mt-3">
+                    {(theoryQuestionRatio * 100).toFixed(0)}%
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -183,28 +236,49 @@ export default function HRJdDetailPage() {
           {activeTab === "candidates" && (
             <div className="space-y-4">
               {candidates.length === 0 ? (
-                <p className="text-slate-500 dark:text-slate-400 text-center py-12">No candidates have applied for this JD yet.</p>
+                <p className="text-slate-500 dark:text-slate-400 text-center py-12">
+                  No candidates have applied for this JD yet.
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Candidate</th>
-                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Resume Score</th>
-                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Decision</th>
-                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Candidate
+                        </th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Email
+                        </th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Resume Score
+                        </th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Decision
+                        </th>
+                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Status
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {candidates.map((candidate) => (
-                        <tr key={candidate.candidate_uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <tr
+                          key={candidate.candidate_uid}
+                          className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                        >
                           <td className="px-6 py-4">
-                            <p className="font-medium text-slate-900 dark:text-white">{candidate.name}</p>
+                            <p className="font-medium text-slate-900 dark:text-white">
+                              {candidate.name}
+                            </p>
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{candidate.email}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
+                            {candidate.email}
+                          </td>
                           <td className="px-6 py-4">
-                            <p className="font-semibold text-slate-900 dark:text-white">{candidate.resumeScore || 0}%</p>
+                            <p className="font-semibold text-slate-900 dark:text-white">
+                              {candidate.resumeScore || 0}%
+                            </p>
                           </td>
                           <td className="px-6 py-4">
                             <StatusBadge status={candidate.finalDecision} />

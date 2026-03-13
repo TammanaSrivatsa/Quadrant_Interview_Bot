@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from io import BytesIO
+import math
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -64,9 +64,54 @@ def _get_model() -> WhisperModel:
     return _MODEL
 
 
-def transcribe_audio_bytes(audio_bytes: bytes, language: str | None = None) -> str:
+def _resolve_input_suffix(filename: str | None = None) -> str:
+    configured = (os.getenv("WHISPER_INPUT_SUFFIX") or ".webm").strip() or ".webm"
+    if not filename:
+        return configured if configured.startswith(".") else f".{configured}"
+
+    suffix = Path(filename).suffix.strip().lower()
+    if suffix in {".webm", ".wav", ".mp3", ".m4a", ".mp4", ".ogg", ".oga"}:
+        return suffix
+    return configured if configured.startswith(".") else f".{configured}"
+
+
+def _collect_text(segments) -> tuple[str, float | None]:
+    parts: list[str] = []
+    confidence_samples: list[float] = []
+
+    for segment in segments:
+        text = str(getattr(segment, "text", "") or "").strip()
+        if text:
+            parts.append(text)
+
+        avg_logprob = getattr(segment, "avg_logprob", None)
+        if avg_logprob is not None:
+            try:
+                confidence_samples.append(max(0.0, min(1.0, math.exp(float(avg_logprob)))))
+            except (TypeError, ValueError, OverflowError):
+                continue
+
+    transcript = " ".join(parts).strip()
+    confidence = None
+    if confidence_samples:
+        confidence = sum(confidence_samples) / len(confidence_samples)
+    return transcript, confidence
+
+
+def transcribe_audio_bytes(
+    audio_bytes: bytes,
+    language: str | None = None,
+    *,
+    filename: str | None = None,
+    context_hint: str | None = None,
+) -> dict[str, object]:
     if not audio_bytes:
-        return ""
+        return {
+            "text": "",
+            "confidence": 0.0,
+            "low_confidence": True,
+            "language": (language or "").strip() or None,
+        }
 
     beam_size_raw = os.getenv("WHISPER_BEAM_SIZE", "1")
     try:
@@ -74,7 +119,7 @@ def transcribe_audio_bytes(audio_bytes: bytes, language: str | None = None) -> s
     except ValueError:
         beam_size = 1
     vad_filter = _truthy(os.getenv("WHISPER_VAD_FILTER"), default=True)
-    temp_suffix = os.getenv("WHISPER_INPUT_SUFFIX", ".webm")
+    temp_suffix = _resolve_input_suffix(filename)
 
     with NamedTemporaryFile(delete=False, suffix=temp_suffix) as temp_file:
         temp_file.write(audio_bytes)
@@ -82,21 +127,33 @@ def transcribe_audio_bytes(audio_bytes: bytes, language: str | None = None) -> s
 
     try:
         model = _get_model()
-        try:
-            segments, _ = model.transcribe(
-                BytesIO(audio_bytes),
-                language=(language or "").strip() or None,
-                beam_size=beam_size,
-                vad_filter=vad_filter,
-            )
-            return " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
-        except Exception as memory_error:
-            segments, _ = model.transcribe(
-                str(temp_path),
-                language=(language or "").strip() or None,
-                beam_size=beam_size,
-                vad_filter=vad_filter,
-            )
-            return " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
+        segments, info = model.transcribe(
+            str(temp_path),
+            language=(language or "").strip() or None,
+            beam_size=beam_size,
+            vad_filter=vad_filter,
+            condition_on_previous_text=False,
+            initial_prompt=(context_hint or "").strip() or None,
+        )
+        transcript, transcript_confidence = _collect_text(segments)
+        language_probability = getattr(info, "language_probability", None)
+
+        confidence_candidates = [
+            value
+            for value in (transcript_confidence, language_probability)
+            if isinstance(value, (int, float))
+        ]
+        confidence = (
+            max(0.0, min(1.0, sum(confidence_candidates) / len(confidence_candidates)))
+            if confidence_candidates
+            else 0.0
+        )
+
+        return {
+            "text": transcript,
+            "confidence": round(confidence, 3),
+            "low_confidence": not transcript or confidence < 0.45,
+            "language": getattr(info, "language", None) or (language or "").strip() or None,
+        }
     finally:
         temp_path.unlink(missing_ok=True)
