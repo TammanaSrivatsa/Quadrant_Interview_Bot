@@ -189,6 +189,8 @@ export const hrApi = {
   interviews: () => request({ method: "get", url: "/hr/interviews" }),
   interviewDetail: (interviewId) => request({ method: "get", url: `/hr/interviews/${interviewId}` }),
   finalizeInterview: (interviewId, payload) => request({ method: "post", url: `/hr/interviews/${interviewId}/finalize`, data: payload }),
+  // FIX C1: Added missing reEvaluateInterview — was causing JS crash on HR interview review page
+  reEvaluateInterview: (interviewId) => request({ method: "post", url: `/hr/interviews/${interviewId}/re-evaluate` }),
   proctoringTimeline: (sessionId) => request({ method: "get", url: `/hr/proctoring/${sessionId}` }),
 
   // Backup
@@ -203,7 +205,6 @@ export const interviewApi = {
   start: (payload) => request({ method: "post", url: "/interview/start", data: payload }),
   submitAnswer: (payload) => request({ method: "post", url: "/interview/answer", data: payload }),
   transcribe: (formData) => request({ method: "post", url: "/interview/transcribe", data: formData }),
-  // ── NEW: call after interview ends to trigger LLM scoring ──
   evaluate: (sessionId) => request({ method: "post", url: `/interview/${sessionId}/evaluate` }),
 };
 

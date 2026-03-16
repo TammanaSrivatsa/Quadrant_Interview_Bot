@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Camera, Mic, Wifi, CheckCircle2, AlertCircle, Play,
-  ShieldCheck, Video, Settings, AlertTriangle, Lock, Mail
+  ShieldCheck, Video, Settings, AlertTriangle, Lock, Mail, Volume2
 } from "lucide-react";
 import { interviewApi } from "../services/api";
 import { useAuth } from "../context/useAuth";
@@ -159,7 +159,6 @@ export default function PreCheck() {
     };
   }, []);
 
-  // Show spinner while auth state is loading
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -168,7 +167,6 @@ export default function PreCheck() {
     );
   }
 
-  // If not logged in — show inline login form (no redirect away from interview URL)
   if (!user) {
     return <InlineLogin onSuccess={() => window.location.reload()} />;
   }
@@ -226,7 +224,6 @@ export default function PreCheck() {
 
   function handleStartInterview() {
     if (starting) return;
-    // Save consent flag and navigate to live interview
     sessionStorage.setItem(`interview-consent:${resultId}`, "true");
     navigate(`/interview/${resultId}/live`);
   }
@@ -346,9 +343,23 @@ export default function PreCheck() {
               <Settings className="mr-2" size={16} />Interview Requirements
             </h4>
             <ul className="space-y-2 text-xs text-blue-700 dark:text-blue-400 font-medium">
-              <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-blue-400 rounded-full" /><span>Sit in a well-lit and quiet room</span></li>
-              <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-blue-400 rounded-full" /><span>Ensure your face is clearly visible</span></li>
-              <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-blue-400 rounded-full" /><span>Use Chrome or Edge for best voice recording support</span></li>
+              <li className="flex items-center space-x-2">
+                <div className="w-1 h-1 bg-blue-400 rounded-full flex-shrink-0" />
+                <span>Sit in a well-lit and quiet room</span>
+              </li>
+              <li className="flex items-center space-x-2">
+                <div className="w-1 h-1 bg-blue-400 rounded-full flex-shrink-0" />
+                <span>Ensure your face is clearly visible</span>
+              </li>
+              <li className="flex items-center space-x-2">
+                <div className="w-1 h-1 bg-blue-400 rounded-full flex-shrink-0" />
+                <span>Use Chrome or Edge for best voice recording support</span>
+              </li>
+              {/* FIX I2: Inform candidates about TTS before the interview starts */}
+              <li className="flex items-start space-x-2">
+                <Volume2 size={12} className="flex-shrink-0 mt-0.5" />
+                <span>Each question will be <strong>read aloud automatically</strong> — you can mute this at any time using the voice button during the interview</span>
+              </li>
             </ul>
           </div>
         </div>

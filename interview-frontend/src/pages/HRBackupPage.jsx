@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Database } from "lucide-react";
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Database, Package } from "lucide-react";
 import { Link } from "react-router-dom";
 import { hrApi } from "../services/api";
 
@@ -7,17 +7,23 @@ export default function HRBackupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [backupData, setBackupData] = useState(null);
+  // FIX C3: backupData is a Blob (zip file) — store it directly, don't try to JSON.parse it
+  const [backupBlob, setBackupBlob] = useState(null);
+  const [backupDate, setBackupDate] = useState(null);
 
   const handleCreateBackup = useCallback(async () => {
     setLoading(true);
     setError("");
     setMessage("");
+    setBackupBlob(null);
+    setBackupDate(null);
 
     try {
-      const data = await hrApi.localBackup();
-      setBackupData(data);
-      setMessage("Backup created successfully!");
+      // hrApi.localBackup() returns a Blob (application/zip from backend FileResponse)
+      const blob = await hrApi.localBackup();
+      setBackupBlob(blob);
+      setBackupDate(new Date());
+      setMessage("Backup created successfully! Click Download to save the file.");
     } catch (backupError) {
       setError(backupError.message);
     } finally {
@@ -25,32 +31,23 @@ export default function HRBackupPage() {
     }
   }, []);
 
+  // FIX C3: Create object URL from the blob directly — don't JSON.stringify a Blob
   function handleDownloadBackup() {
-    if (!backupData) {
-      setError("No backup data available");
+    if (!backupBlob) {
+      setError("No backup available. Please create one first.");
       return;
     }
 
-    const dataStr = JSON.stringify(backupData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(dataBlob);
+    const url = URL.createObjectURL(backupBlob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `backup-${new Date().toISOString().split("T")[0]}.json`;
+    link.download = `interview_bot_backup_${new Date().toISOString().split("T")[0]}.zip`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Clean up the object URL after a short delay
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-
-  const stats = backupData
-    ? {
-        jds: backupData.jds?.length || 0,
-        candidates: backupData.candidates?.length || 0,
-        applications: backupData.applications?.length || 0,
-        interviews: backupData.interviews?.length || 0,
-      }
-    : null;
 
   return (
     <div className="space-y-8">
@@ -66,7 +63,7 @@ export default function HRBackupPage() {
           <div className="flex items-start justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Create Backup</h1>
-              <p className="text-lg text-slate-600 dark:text-slate-400">Export all system data to a JSON file for backup or archiving.</p>
+              <p className="text-lg text-slate-600 dark:text-slate-400">Export all system data as a zip archive containing the database and uploaded files.</p>
             </div>
             <Database size={32} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
           </div>
@@ -74,7 +71,7 @@ export default function HRBackupPage() {
           <div className="space-y-6">
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl p-4">
               <p className="text-sm text-blue-900 dark:text-blue-300">
-                This will create a comprehensive backup of all job descriptions, candidates, applications, and interview data.
+                This creates a zip archive containing the full database and all uploaded resumes and proctoring snapshots. Store it securely.
               </p>
             </div>
 
@@ -104,62 +101,75 @@ export default function HRBackupPage() {
               {loading ? "Creating backup..." : "Create Backup"}
             </button>
 
-            {backupData && (
+            {backupBlob && (
               <button
                 onClick={handleDownloadBackup}
-                className="w-full px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all flex items-center justify-center"
+                className="w-full px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all flex items-center justify-center gap-2"
               >
-                <Download size={20} className="mr-2" />
-                Download Backup File
+                <Download size={20} />
+                Download Backup (.zip)
               </button>
             )}
           </div>
         </div>
 
-        {stats && (
+        {/* Backup info panel */}
+        {backupBlob ? (
           <div className="space-y-4">
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-4">Backup Summary</h3>
-              <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Package size={16} className="text-emerald-500" />
+                Backup Ready
+              </h3>
+              <div className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
                 <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Job Descriptions</span>
-                  <span className="text-lg font-bold text-slate-900 dark:text-white">{stats.jds}</span>
+                  <span>Format</span>
+                  <span className="font-bold text-slate-900 dark:text-white">ZIP Archive</span>
                 </div>
                 <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Candidates</span>
-                  <span className="text-lg font-bold text-slate-900 dark:text-white">{stats.candidates}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Applications</span>
-                  <span className="text-lg font-bold text-slate-900 dark:text-white">{stats.applications}</span>
+                  <span>Size</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {backupBlob.size > 1024 * 1024
+                      ? `${(backupBlob.size / (1024 * 1024)).toFixed(1)} MB`
+                      : `${(backupBlob.size / 1024).toFixed(0)} KB`}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center py-2">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Interviews</span>
-                  <span className="text-lg font-bold text-slate-900 dark:text-white">{stats.interviews}</span>
+                  <span>Created</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {backupDate?.toLocaleString()}
+                  </span>
                 </div>
               </div>
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-4">Backup Info</h3>
-              <div className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
-                <p>
-                  <span className="font-bold text-slate-900 dark:text-white">Created:</span> {new Date().toLocaleString()}
-                </p>
-                <p>
-                  <span className="font-bold text-slate-900 dark:text-white">Format:</span> JSON
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-500 mt-4">You can use this backup to restore data or migrate to another system.</p>
-              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-3">Contents</h3>
+              <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                  <span>Full SQLite database (all candidates, interviews, results)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                  <span>Uploaded resumes</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                  <span>Proctoring snapshots</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                  <span>manifest.json with record counts</span>
+                </li>
+              </ul>
             </div>
           </div>
-        )}
-
-        {!stats && (
+        ) : (
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm flex items-center justify-center text-center">
             <div>
               <Database size={48} className="mx-auto text-slate-300 dark:text-slate-700 mb-4" />
-              <p className="text-slate-500 dark:text-slate-400">Create a backup to see data summary</p>
+              <p className="text-slate-500 dark:text-slate-400">Create a backup to download the archive</p>
             </div>
           </div>
         )}
@@ -170,7 +180,7 @@ export default function HRBackupPage() {
         <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
           <li className="flex items-start">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 mr-3 flex-shrink-0" />
-            <span>Create backups regularly, especially before major system updates</span>
+            <span>Create backups before major changes or at end of each interview batch</span>
           </li>
           <li className="flex items-start">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 mr-3 flex-shrink-0" />
@@ -178,11 +188,7 @@ export default function HRBackupPage() {
           </li>
           <li className="flex items-start">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 mr-3 flex-shrink-0" />
-            <span>Test restoring from backups periodically to ensure data integrity</span>
-          </li>
-          <li className="flex items-start">
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 mr-3 flex-shrink-0" />
-            <span>Include backup files in your disaster recovery plan</span>
+            <span>The zip includes the raw SQLite file — keep it confidential</span>
           </li>
         </ul>
       </div>

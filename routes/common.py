@@ -326,7 +326,6 @@ def evaluate_resume_for_job(
     )
     explanation["question_count_used"] = question_count
     explanation["project_ratio_used"] = project_ratio
-    # Question generation is triggered explicitly from HR endpoint and stored on candidates.questions_json.
     return float(explanation["final_resume_score"]), explanation, []
 
 
@@ -358,9 +357,14 @@ def upsert_result(
         current.interview_questions = None
         if not current.application_id:
             current.application_id = f"APP-{job_id}-{candidate_id}-{uuid4().hex[:6].upper()}"
-        current.interview_date = None
-        current.interview_link = None
-        current.interview_token = None
+        # FIX C4: Do NOT clear interview_date / interview_link / interview_token on re-score.
+        # Previously these were always set to None on every resume re-upload, which wiped a
+        # candidate's scheduled interview if they re-uploaded their resume to improve their score.
+        # Now we only clear them if no schedule exists yet (first upload).
+        if not current.interview_date:
+            current.interview_date = None
+            current.interview_link = None
+            current.interview_token = None
         db.commit()
         db.refresh(current)
         return current

@@ -1,11 +1,9 @@
 /**
  * Interview.jsx — Live interview page with enhanced proctoring + TTS (Indian accent).
  *
- * NEW: Text-to-Speech using Web Speech API
- *   • Auto-speaks each question when it appears (en-IN / Indian English)
- *   • Speaker button to replay question
- *   • Mute toggle to disable auto-speak
- *   • Stops speaking when mic starts recording
+ * FIXES IN THIS FILE:
+ *   C2: Pass resultId to useProctoring so tab-switch events route to the correct backend endpoint
+ *   I1: Handle HTTP 400 "already answered" gracefully — treat as success, reload session
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,7 +26,6 @@ function useTTS() {
   const pickVoice = useCallback(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return null;
     const voices = window.speechSynthesis.getVoices();
-    // Priority order: Indian English > British > American > any English
     const priority = ["en-IN", "en-GB", "en-US"];
     for (const lang of priority) {
       const v = voices.find((v) => v.lang === lang);
@@ -43,7 +40,7 @@ function useTTS() {
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-IN";
-    utterance.rate = 0.88;   // slightly slower — clear for non-native listeners
+    utterance.rate = 0.88;
     utterance.pitch = 1.05;
     utterance.volume = muted ? 0 : 1;
 
@@ -57,7 +54,6 @@ function useTTS() {
     utterance.onerror = () => setSpeaking(false);
 
     if (window.speechSynthesis.getVoices().length === 0) {
-      // Chrome loads voices async — wait for them
       window.speechSynthesis.onvoiceschanged = () => {
         applyVoice();
         window.speechSynthesis.speak(utterance);
@@ -119,7 +115,6 @@ function getPreferredAudioMimeType() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
   return candidates.find((t) => window.MediaRecorder.isTypeSupported(t)) || "";
 }
-
 
 const EMOTION_COLOR = {
   confident: "text-emerald-400",
@@ -189,13 +184,15 @@ export default function Interview() {
   const { speak, stop: stopSpeaking, speaking, muted, toggleMute } = useTTS();
 
   // ── proctoring ─────────────────────────────────────────────────────────────
+  // FIX C2: Pass resultId to useProctoring so tab-switch events go to the correct
+  // backend route /api/interview/{resultId}/event (not /api/interview/{sessionId}/event)
   const {
     proctoringEvents,
     voiceMetrics,
     emotionSignal,
     emotionEnabled,
     analyseAnswer,
-  } = useProctoring({ sessionId, videoRef, enabled: !!sessionId });
+  } = useProctoring({ sessionId, resultId, videoRef, enabled: !!sessionId });
 
   const tabSwitchCount = proctoringEvents.filter((e) => e.type === "TAB_SWITCH").length;
 
@@ -238,11 +235,10 @@ export default function Interview() {
 
   useEffect(() => { loadSession(); }, [loadSession]);
 
-  // ── AUTO-SPEAK question (Indian accent) ────────────────────────────────────
+  // ── AUTO-SPEAK question ────────────────────────────────────────────────────
   useEffect(() => {
     if (!currentQuestion?.text || loading || answerFeedback) return;
     if (muted) return;
-    // Small delay so the UI renders before audio starts
     const timer = setTimeout(() => {
       speak(currentQuestion.text);
     }, 700);
@@ -250,9 +246,8 @@ export default function Interview() {
       clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentQuestion?.id]); // only re-trigger on question ID change, not every render
+  }, [currentQuestion?.id]);
 
-  // Stop TTS when recording or submitting
   useEffect(() => {
     if (isRecording || isSubmitting) stopSpeaking();
   }, [isRecording, isSubmitting, stopSpeaking]);
@@ -265,10 +260,8 @@ export default function Interview() {
       setPreviewReady(false);
       setPreviewWarning("");
 
-      // Stop any existing stream first
       if (streamRef.current) { stopStreamTracks(streamRef.current); streamRef.current = null; }
 
-      // Wait for videoRef to be assigned by React (max 2s)
       let waited = 0;
       while (!videoRef.current && waited < 2000) {
         await new Promise((r) => setTimeout(r, 50));
@@ -283,7 +276,6 @@ export default function Interview() {
         return;
       }
 
-      // Try with both video + audio first, fallback to video-only
       let stream = null;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -300,8 +292,6 @@ export default function Interview() {
       if (disposed) { stopStreamTracks(stream); return; }
 
       streamRef.current = stream;
-
-      // Directly assign srcObject — most reliable method
       videoEl.srcObject = stream;
       videoEl.muted = true;
       videoEl.playsInline = true;
@@ -309,12 +299,10 @@ export default function Interview() {
       try {
         await videoEl.play();
       } catch {
-        // Some browsers need a user-gesture; try again after a short pause
         await new Promise((r) => setTimeout(r, 300));
-        try { await videoEl.play(); } catch { /* srcObject is still set, video shows */ }
+        try { await videoEl.play(); } catch { /* srcObject is still set */ }
       }
 
-      // Poll until we get real pixels (handles slow camera init)
       const pollStart = Date.now();
       const poll = () => {
         if (disposed) return;
@@ -323,7 +311,6 @@ export default function Interview() {
         } else if (Date.now() - pollStart < 8000) {
           setTimeout(poll, 200);
         } else {
-          // Even if still 0×0, mark ready so the UI shows (camera may still render)
           setPreviewReady(true);
         }
       };
@@ -409,12 +396,21 @@ export default function Interview() {
 
       _advanceAfterAnswer(response);
     } catch (e) {
+      // FIX I1: If the question was already answered (double-submit or race condition),
+      // treat it as success and reload session to get the next unanswered question.
+      // Previously this showed a confusing red error to the candidate.
+      if (e.message && e.message.toLowerCase().includes("already answered")) {
+        autoSubmittedRef.current = false;
+        setError("");
+        await loadSession();
+        return;
+      }
       setError(e.message);
       autoSubmittedRef.current = false;
     } finally {
       setIsSubmitting(false);
     }
-  }, [answer, currentQuestion, _advanceAfterAnswer, sessionId, timeLeft, analyseAnswer, stopSpeaking]);
+  }, [answer, currentQuestion, _advanceAfterAnswer, sessionId, timeLeft, analyseAnswer, stopSpeaking, loadSession]);
 
   // ── recording ──────────────────────────────────────────────────────────────
   const stopRecordingAndTranscribe = useCallback(async () => {
@@ -457,7 +453,7 @@ export default function Interview() {
   const startRecording = useCallback(async () => {
     if (!window.MediaRecorder) { setError("Voice recording not supported. Use Chrome or Edge."); return; }
     setError(""); setTranscriptionWarning("");
-    stopSpeaking(); // always stop TTS before mic
+    stopSpeaking();
     try {
       let recStream;
       if (hasActiveAudioTrack(streamRef.current)) {
@@ -584,7 +580,6 @@ export default function Interview() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* Mute / unmute TTS */}
               <button
                 type="button"
                 onClick={toggleMute}
@@ -623,7 +618,6 @@ export default function Interview() {
               <h2 className="text-2xl font-bold text-white leading-tight flex-1">
                 {currentQuestion?.text}
               </h2>
-              {/* Replay / stop TTS */}
               <button
                 type="button"
                 onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "")}
@@ -647,7 +641,6 @@ export default function Interview() {
               </button>
             </div>
 
-            {/* Speaking status badge */}
             {speaking && (
               <div className="mt-3 ml-4 inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600/20 border border-blue-500/30 rounded-full text-blue-400 text-[10px] font-black uppercase tracking-widest">
                 <Volume2 size={10} className="animate-pulse" />
@@ -769,7 +762,6 @@ export default function Interview() {
                 </div>
               )}
 
-              {/* TTS overlay on video */}
               {speaking && (
                 <div className="absolute bottom-10 left-2 flex items-center gap-1 bg-blue-600/80 px-2 py-1 rounded-full border border-blue-400/30">
                   <Volume2 size={10} className="text-white animate-pulse" />
@@ -800,7 +792,6 @@ export default function Interview() {
               ))}
             </div>
 
-            {/* TTS status tile */}
             <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5 flex items-center justify-between">
               <div>
                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Question Voice (en-IN)</p>

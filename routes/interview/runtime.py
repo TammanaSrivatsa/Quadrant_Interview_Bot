@@ -1,20 +1,19 @@
 """
 routes/interview/runtime.py — Interview + timed session + OpenCV proctoring.
 
-FIXES applied:
-  1. PAUSE_ON_WARNINGS_ENABLED is now read from the PROCTOR_PAUSE_ENABLED
-     environment variable instead of being a hardcoded False.
-     Set PROCTOR_PAUSE_ENABLED=true in .env to enable enforcement.
-  2. Baseline re-capture on reconnect is prevented: if session already has a
-     baseline_face_signature, we skip the baseline capture instead of
-     overwriting it with the new camera frame. This fixes the "reconnect
-     loses original baseline" bug.
-  3. llm_eval_status is set to "pending" when a session completes so the
-     HR dashboard correctly shows "Pending" until /evaluate is called.
+FIXES in this file:
+  I3: interview_transcribe now returns graceful empty response instead of HTTP 500
+      when Groq STT is unavailable. Candidate sees a soft warning and can type answer.
+
+Original fixes also present:
+  1. PAUSE_ON_WARNINGS_ENABLED reads from env var PROCTOR_PAUSE_ENABLED
+  2. Baseline re-capture prevented on reconnect
+  3. llm_eval_status set to "pending" when session completes
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -47,6 +46,7 @@ from utils.scoring import summarize_and_score
 from utils.stt_whisper import transcribe_audio_bytes
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 PROCTOR_UPLOAD_ROOT = Path("uploads") / "proctoring"
 PROCTOR_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
@@ -59,8 +59,6 @@ VIOLATION_FRAMES_PER_WARNING = 3
 PAUSE_SECONDS_ON_THIRD_WARNING = 60
 MAX_WARNINGS_BEFORE_PAUSE = 3
 
-# FIX: Read from env var instead of hardcoded False.
-# Set PROCTOR_PAUSE_ENABLED=true in .env to activate interview pause on violations.
 PAUSE_ON_WARNINGS_ENABLED: bool = os.getenv("PROCTOR_PAUSE_ENABLED", "false").lower() == "true"
 
 SUSPICIOUS_TYPES = {
@@ -508,7 +506,6 @@ def interview_answer(
     if interview_completed:
         session.status = "completed"
         session.ended_at = now
-        # FIX: llm_eval_status stays "pending" until /evaluate is called
         session.llm_eval_status = "pending"
         db.commit()
         return {
@@ -563,13 +560,21 @@ def interview_transcribe(
             context_hint=context_hint,
         )
     except Exception as exc:
-        message = str(exc).strip() or "Unknown transcription error."
-        if len(message) > 500:
-            message = f"{message[:500]}..."
-        raise HTTPException(
-            status_code=500,
-            detail=f"Transcription failed. {message}",
-        ) from exc
+        # FIX I3: Return graceful empty transcript instead of HTTP 500.
+        # When Groq STT is down or rate-limited, the interview must not crash.
+        # The candidate sees a soft warning and can type their answer manually.
+        # Previously this raised HTTP 500 which showed a hard error mid-interview.
+        logger.warning(
+            "STT transcription unavailable (Groq error) — returning empty transcript. Error: %s", exc
+        )
+        return {
+            "ok": True,
+            "text": "",
+            "confidence": 0.0,
+            "low_confidence": True,
+            "language": language,
+            "degraded": True,
+        }
 
     return {"ok": True, **transcript}
 
@@ -697,8 +702,6 @@ def upload_proctor_frame(
         elif shoulder_model_enabled and shoulder_score < SHOULDER_MIN_THRESHOLD:
             resolved_event_type = "baseline_no_shoulder"
         elif current_signature:
-            # FIX: Only capture baseline if one doesn't already exist for this session.
-            # Prevents overwriting the original baseline when the candidate reconnects.
             if not session.baseline_face_signature:
                 session.baseline_face_signature = json.dumps(current_signature)
                 session.baseline_face_captured_at = now
