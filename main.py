@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -282,13 +283,16 @@ if not _groq_key:
 # request, causing a timeout-like experience for the candidate.
 @app.on_event("startup")
 async def _preload_ml_model() -> None:
-    """Warm up the SentenceTransformer model in the background at startup."""
-    try:
-        from ai_engine.phase1.matching import _get_model
-        _get_model()
-        logger.info("✅  SentenceTransformer model loaded and ready.")
-    except Exception as exc:
-        logger.warning("SentenceTransformer preload failed (non-fatal): %s", exc)
+    """Warm up the SentenceTransformer model without blocking backend startup."""
+    def _load_model() -> None:
+        try:
+            from ai_engine.phase1.matching import _get_model
+            _get_model()
+            logger.info("✅  SentenceTransformer model loaded and ready.")
+        except Exception as exc:
+            logger.warning("SentenceTransformer preload failed (non-fatal): %s", exc)
+
+    threading.Thread(target=_load_model, name="st-model-preload", daemon=True).start()
 
 
 app.add_middleware(
@@ -311,5 +315,17 @@ app.add_middleware(
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+# NOTE: Mount the aggregate API router exactly once. Double-registration creates
+# duplicate/conflicting route entries and can surface as incorrect 404/405 behavior.
 app.include_router(api_router)
-app.include_router(api_router)
+
+
+# NOTE: Lightweight health endpoints for local startup verification.
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"ok": "true", "service": "interview-bot-api"}
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}

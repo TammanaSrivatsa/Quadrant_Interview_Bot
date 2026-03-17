@@ -1,7 +1,8 @@
 import axios from "axios";
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
+  // NOTE: Keep frontend API calls relative so Vite dev proxy forwards /api to the backend.
+  baseURL: "/api",
   withCredentials: true,
 });
 
