@@ -160,6 +160,12 @@ class InterviewQuestion(Base):
     text = Column(Text, nullable=False)
     difficulty = Column(String(30), default="medium", nullable=False)
     topic = Column(String(80), default="general", nullable=False)
+    # Final interview-question metadata used by runtime, evaluation, and HR review.
+    question_type = Column(String(30), default="project", nullable=False)
+    intent = Column(Text, nullable=True)
+    focus_skill = Column(String(80), nullable=True)
+    project_name = Column(String(160), nullable=True)
+    reference_answer = Column(Text, nullable=True)
     answer_text = Column(Text, nullable=True)
     answer_summary = Column(Text, nullable=True)
     relevance_score = Column(Float, nullable=True)
@@ -168,6 +174,7 @@ class InterviewQuestion(Base):
     skipped = Column(Boolean, default=False, nullable=False)
     llm_score = Column(Float, nullable=True)
     llm_feedback = Column(Text, nullable=True)
+    evaluation_json = Column(JSON, nullable=True)
 
     session = relationship("InterviewSession", back_populates="questions")
     answers = relationship("InterviewAnswer", back_populates="question")

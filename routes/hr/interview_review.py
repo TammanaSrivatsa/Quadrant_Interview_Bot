@@ -154,6 +154,7 @@ def interview_detail(
     job_skills = (job.skill_scores or {}).keys() if job else ()
 
     questions_payload = []
+    section_scores: dict[str, list[float]] = defaultdict(list)
     for q in sorted(session.questions, key=lambda item: item.id):
         answer_text = q.answer_text if q.answer_text is not None else (
             latest_answers[q.id].answer_text if q.id in latest_answers else None
@@ -214,6 +215,7 @@ def interview_detail(
             for ev in events
         ],
         "hr_review": hr_review,
+        "section_summary": {key: round(sum(values) / len(values), 1) for key, values in section_scores.items() if values},
     }
 
 
@@ -278,9 +280,7 @@ def finalize_interview(
     }
 
 
-# ── FIX: NEW re-evaluate endpoint ─────────────────────────────────────────────
-# Allows HR to manually re-trigger LLM scoring when it shows "Pending" after
-# a Groq outage. Previously there was no way to recover from a scoring failure.
+# ── re-evaluate interview answers ────────────────────────────────────────────
 
 @router.post("/interviews/{interview_id}/re-evaluate")
 def re_evaluate_interview(
@@ -289,7 +289,6 @@ def re_evaluate_interview(
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
 ):
-    """Re-trigger LLM answer scoring for a completed interview session."""
     session = (
         db.query(InterviewSession)
         .join(Result, InterviewSession.result_id == Result.id)
@@ -302,30 +301,21 @@ def re_evaluate_interview(
     )
     if not session:
         raise HTTPException(status_code=404, detail="Interview not found")
-
     if session.status == "in_progress":
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot re-evaluate an interview that is still in progress.",
-        )
+        raise HTTPException(status_code=400, detail="Cannot re-evaluate an interview that is still in progress.")
 
-    # Mark as running so the frontend can show a spinner
     session.llm_eval_status = "running"
     db.commit()
-
-    # Run scoring in a background task so the HTTP response returns immediately
     background_tasks.add_task(_run_llm_evaluation, interview_id)
+    return {"ok": True, "message": "AI re-evaluation started. Refresh the interview detail page in ~30 seconds.", "session_id": interview_id}
 
-    return {
-        "ok": True,
-        "message": "LLM re-evaluation started. Refresh the interview detail page in ~30 seconds.",
-        "session_id": interview_id,
-    }
+
+# Keep the import available for background tasks.
+from database import SessionLocal  # noqa: E402
 
 
 def _run_llm_evaluation(session_id: int) -> None:
-    """Background worker: score all answers for a session with Groq LLM."""
-    from services.llm.client import score_answer
+    from services.llm.client import evaluate_answer_detailed
 
     db = SessionLocal()
     try:
@@ -342,43 +332,61 @@ def _run_llm_evaluation(session_id: int) -> None:
 
         scored = 0
         total_score = 0.0
-
         for question in questions:
             answer_text = (question.answer_text or "").strip()
             if not answer_text or question.skipped:
-                _save_llm_fields(db, session_id, question.id, 0, "Answer was skipped or empty.")
+                evaluation = {
+                    "question": question.text,
+                    "candidate_answer": answer_text,
+                    "generated_reference_answer": question.reference_answer or "A strong answer should directly answer the question with practical detail.",
+                    "score": 0,
+                    "feedback": "Answer was skipped or empty.",
+                    "strengths": [],
+                    "weaknesses": ["No answer was provided."],
+                    "section": question.question_type or "project",
+                    "dimension_breakdown": {"relevance": 0, "correctness": 0, "completeness": 0, "clarity": 0, "confidence": 0},
+                }
+                _save_llm_fields(db, session_id, question.id, evaluation)
                 continue
 
             try:
-                result = score_answer(question.text, answer_text)
-                llm_score = int(result["score"])
-                llm_feedback = str(result["feedback"])
+                evaluation = evaluate_answer_detailed(
+                    question=question.text,
+                    answer=answer_text,
+                    section=question.question_type or "project",
+                    reference_answer=question.reference_answer,
+                    intent=question.intent,
+                    focus_skill=question.focus_skill,
+                    project_name=question.project_name,
+                )
             except Exception as exc:
-                logger.error("LLM scoring failed for question %s: %s", question.id, exc)
-                # Fall back to local rubric score so "Pending" doesn't persist
+                logger.error("AI scoring failed for question %s: %s", question.id, exc)
                 from ai_engine.phase1.scoring import compute_answer_scorecard
                 local = compute_answer_scorecard(question.text, answer_text)
-                llm_score = int(local["overall_score"])
-                llm_feedback = "Scored locally (LLM unavailable)."
+                overall = int(local["overall_score"])
+                evaluation = {
+                    "question": question.text,
+                    "candidate_answer": answer_text,
+                    "generated_reference_answer": question.reference_answer or "A strong answer should directly answer the question with practical detail.",
+                    "score": overall,
+                    "feedback": "Scored locally (AI unavailable).",
+                    "strengths": ["The answer was evaluated using the local fallback scorer."],
+                    "weaknesses": [],
+                    "section": question.question_type or "project",
+                    "dimension_breakdown": {"relevance": overall, "correctness": overall, "completeness": overall, "clarity": overall, "confidence": overall},
+                }
 
-            _save_llm_fields(db, session_id, question.id, llm_score, llm_feedback)
-            total_score += llm_score
+            _save_llm_fields(db, session_id, question.id, evaluation)
+            total_score += float(evaluation["score"])
             scored += 1
 
-        db.commit()
-
-        # Mark session as completed
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         if session:
             session.llm_eval_status = "completed"
-            db.commit()
-
-        logger.info(
-            "LLM re-evaluation done: session=%s scored=%s avg=%.1f",
-            session_id, scored, total_score / scored if scored else 0,
-        )
+        db.commit()
+        logger.info("AI re-evaluation done: session=%s scored=%s avg=%.1f", session_id, scored, total_score / scored if scored else 0)
     except Exception as exc:
-        logger.error("LLM re-evaluation worker failed for session %s: %s", session_id, exc)
+        logger.error("AI re-evaluation worker failed for session %s: %s", session_id, exc)
         try:
             session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
             if session:
@@ -390,15 +398,7 @@ def _run_llm_evaluation(session_id: int) -> None:
         db.close()
 
 
-def _save_llm_fields(
-    db: Session,
-    session_id: int,
-    question_id: int,
-    llm_score: int,
-    llm_feedback: str,
-) -> None:
-    """FIX: Save llm_score+llm_feedback to BOTH InterviewAnswer and InterviewQuestion
-    inside a single flush so both succeed or neither does."""
+def _save_llm_fields(db: Session, session_id: int, question_id: int, evaluation: dict[str, object]) -> None:
     answer = (
         db.query(InterviewAnswer)
         .filter(
@@ -409,17 +409,15 @@ def _save_llm_fields(
         .first()
     )
     if answer:
-        answer.llm_score = llm_score
-        answer.llm_feedback = llm_feedback
+        answer.llm_score = float(evaluation["score"])
+        answer.llm_feedback = str(evaluation["feedback"])
+        answer.evaluation_json = evaluation
 
     question = db.query(InterviewQuestion).filter(InterviewQuestion.id == question_id).first()
     if question:
-        question.llm_score = llm_score
-        question.llm_feedback = llm_feedback
+        question.llm_score = float(evaluation["score"])
+        question.llm_feedback = str(evaluation["feedback"])
+        question.reference_answer = str(evaluation.get("generated_reference_answer") or question.reference_answer or "") or None
+        question.evaluation_json = evaluation
 
-    # FIX: single flush ensures both writes are atomic within the transaction
     db.flush()
-
-
-# Keep the import available for background tasks
-from database import SessionLocal  # noqa: E402

@@ -32,6 +32,23 @@ from utils.email_service import send_interview_email
 router = APIRouter()
 
 
+def _generate_result_question_bank(
+    *,
+    result: Result,
+    resume_text: str,
+    job: JobDescription,
+) -> list[dict[str, object]]:
+    bundle = build_question_bundle(
+        resume_text=resume_text,
+        jd_title=job.jd_title,
+        jd_skill_scores=(job.skill_scores or {}),
+        question_count=int(job.question_count if job.question_count is not None else 8),
+    )
+    questions = bundle.get("questions") or []
+    result.interview_questions = questions
+    return questions
+
+
 def _selected_jd_or_404(db: Session, jd_id: int) -> JobDescriptionConfig:
     selected_jd = db.query(JobDescriptionConfig).filter(JobDescriptionConfig.id == jd_id).first()
     if selected_jd:
@@ -233,6 +250,13 @@ def upload_resume(
         cutoff_score=float(selected_job.cutoff_score if selected_job.cutoff_score is not None else 65.0),
     )
 
+    # Main restored flow: generate and persist interview questions immediately
+    # after resume-vs-JD screening. Result.interview_questions is the source of truth.
+    resume_text = extract_text_from_file(candidate.resume_path)
+    questions = _generate_result_question_bank(result=result, resume_text=resume_text, job=selected_job)
+    db.commit()
+    db.refresh(result)
+
     return {
         "ok": True,
         "message": "Resume uploaded and scoring completed.",
@@ -251,6 +275,7 @@ def upload_resume(
         "selected_job_id": selected_job.id,
         "selected_jd_id": selected_job.id,
         "result": serialize_result(result),
+        "question_count": len(questions),
         "resume_advice": _resume_advice_payload(
             candidate=candidate,
             selected_jd=selected_jd,

@@ -222,10 +222,19 @@ export default function PreCheck() {
     }
   };
 
-  function handleStartInterview() {
+  async function handleStartInterview() {
     if (starting) return;
-    sessionStorage.setItem(`interview-consent:${resultId}`, "true");
-    navigate(`/interview/${resultId}/live`);
+    setStarting(true);
+    setError("");
+    try {
+      await interviewApi.access(Number(resultId));
+      sessionStorage.setItem(`interview-consent:${resultId}`, "true");
+      navigate(`/interview/${resultId}/live`);
+    } catch (e) {
+      setError(e?.message || "Interview questions are not ready yet. Please try again.");
+    } finally {
+      setStarting(false);
+    }
   }
 
   const cameraGranted = checks.camera.status === "granted";

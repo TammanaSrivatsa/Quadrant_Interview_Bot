@@ -144,6 +144,11 @@ def ensure_schema() -> None:
             rows = conn.execute(text("PRAGMA table_info(interview_questions_v2)")).fetchall()
             q_cols = {row[1] for row in rows}
             for col, defn in [
+                ("question_type",     "VARCHAR(30) DEFAULT 'project' NOT NULL"),
+                ("intent",            "TEXT"),
+                ("focus_skill",       "VARCHAR(80)"),
+                ("project_name",      "VARCHAR(160)"),
+                ("reference_answer",  "TEXT"),
                 ("answer_summary",    "TEXT"),
                 ("relevance_score",   "FLOAT"),
                 ("time_taken_seconds","INTEGER"),
@@ -151,6 +156,7 @@ def ensure_schema() -> None:
                 ("answer_text",       "TEXT"),
                 ("llm_score",         "FLOAT"),
                 ("llm_feedback",      "TEXT"),
+                ("evaluation_json",   "JSON"),
                 ("allotted_seconds",  "INTEGER DEFAULT 60 NOT NULL"),
             ]:
                 if col not in q_cols:

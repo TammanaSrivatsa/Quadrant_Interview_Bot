@@ -266,15 +266,7 @@ def _create_next_question(
     asked_questions = [item.text for item in existing]
     source_questions = normalize_result_questions(result.interview_questions)
     if not source_questions:
-        candidate = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
-        if candidate and candidate.questions_json:
-            stored = candidate.questions_json
-            if isinstance(stored, dict):
-                source_questions = normalize_result_questions(stored.get("questions") or stored)
-            else:
-                source_questions = normalize_result_questions(stored)
-    job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
-    job_title = (job.jd_title if job else "") or "the role"
+        raise HTTPException(status_code=400, detail="Interview questions are not available for this session yet. Please reopen the interview from pre-check.")
     generated = next_question_payload(
         source_questions=source_questions,
         asked_questions=asked_questions,
@@ -292,6 +284,11 @@ def _create_next_question(
         text=generated["text"],
         difficulty=generated["difficulty"],
         topic=generated["topic"],
+        question_type=str(generated.get("type") or "project"),
+        intent=generated.get("intent"),
+        focus_skill=generated.get("focus_skill"),
+        project_name=generated.get("project_name"),
+        reference_answer=generated.get("reference_answer"),
         allotted_seconds=dynamic_seconds,
     )
     db.add(question)
@@ -319,6 +316,40 @@ def _compose_start_response(
         "paused": pause_seconds_left > 0,
         "pause_seconds_left": pause_seconds_left,
     }
+
+
+@router.get("/interview/{result_id}/access")
+def interview_access(
+    result_id: int,
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    candidate = db.query(Candidate).filter(Candidate.id == current_user.user_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    result = _resolve_candidate_result(db, candidate.id, result_id)
+    _ensure_interview_ready(result)
+    questions = normalize_result_questions(result.interview_questions)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Interview questions are not ready yet for this result.")
+    return {"ok": True, "result_id": result.id, "interview_ready": True, "question_count": len(questions)}
+
+
+@router.get("/interview/{result_id}/access")
+def interview_access(
+    result_id: int,
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    candidate = db.query(Candidate).filter(Candidate.id == current_user.user_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    result = _resolve_candidate_result(db, candidate.id, result_id)
+    _ensure_interview_ready(result)
+    questions = normalize_result_questions(result.interview_questions)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Interview questions are not ready yet for this result.")
+    return {"ok": True, "result_id": result.id, "interview_ready": True, "question_count": len(questions)}
 
 
 @router.post("/interview/start")

@@ -204,6 +204,7 @@ export const hrApi = {
 
 // ── Interview ─────────────────────────────────────────────────────────────────
 export const interviewApi = {
+  access: (resultId) => request({ method: "get", url: `/interview/${resultId}/access` }),
   start: (payload) => request({ method: "post", url: "/interview/start", data: payload }),
   submitAnswer: (payload) => request({ method: "post", url: "/interview/answer", data: payload }),
   transcribe: (formData) => request({ method: "post", url: "/interview/transcribe", data: formData }),
