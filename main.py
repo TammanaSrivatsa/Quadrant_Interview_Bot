@@ -70,6 +70,9 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE job_descriptions ADD COLUMN education_requirement VARCHAR(50)"))
             if "experience_requirement" not in jd_cols:
                 conn.execute(text("ALTER TABLE job_descriptions ADD COLUMN experience_requirement INTEGER DEFAULT 0 NOT NULL"))
+            # NOTE: Backward-safe demo toggle support for JD visibility.
+            if "is_active" not in jd_cols:
+                conn.execute(text("ALTER TABLE job_descriptions ADD COLUMN is_active BOOLEAN DEFAULT 1 NOT NULL"))
 
             # ── jobs (legacy table) ───────────────────────────────────────
             rows = conn.execute(text("PRAGMA table_info(jobs)")).fetchall()
@@ -309,3 +312,4 @@ uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 app.include_router(api_router)
+p.include_router(api_router)

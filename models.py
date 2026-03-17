@@ -77,6 +77,8 @@ class JobDescriptionConfig(Base):
     min_academic_percent = Column(Float, default=0.0, nullable=False)
     total_questions = Column(Integer, default=8, nullable=False)
     project_question_ratio = Column(Float, default=0.8, nullable=False)
+    # NOTE: Backward-safe active flag for demo readiness.
+    is_active = Column(Boolean, default=True, nullable=False)
     # NEW: store education + experience requirements on the canonical config
     education_requirement = Column(String(50), nullable=True)
     experience_requirement = Column(Integer, default=0, nullable=False)

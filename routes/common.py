@@ -198,6 +198,8 @@ def list_active_jds(db: Session) -> list[dict[str, object]]:
                 "jd_dict_json": jd.jd_dict_json or {},
                 "weights_json": jd.weights_json or {},
                 "qualify_score": float(jd.qualify_score if jd.qualify_score is not None else 65.0),
+                "education_requirement": jd.education_requirement,
+                "experience_requirement": int(jd.experience_requirement if jd.experience_requirement is not None else 0),
                 "min_academic_percent": float(
                     jd.min_academic_percent if jd.min_academic_percent is not None else 0.0
                 ),
@@ -205,10 +207,12 @@ def list_active_jds(db: Session) -> list[dict[str, object]]:
                 "project_question_ratio": float(
                     jd.project_question_ratio if jd.project_question_ratio is not None else 0.8
                 ),
+                "is_active": bool(jd.is_active if jd.is_active is not None else True),
                 "created_at": jd.created_at,
             }
         )
-    return payload
+    # NOTE: Candidate-facing list should only expose active JDs.
+    return [item for item in payload if item["is_active"]]
 
 
 def serialize_result(result: Result | None) -> dict[str, object] | None:
@@ -220,14 +224,19 @@ def serialize_result(result: Result | None) -> dict[str, object] | None:
     interview_completed = bool(
         latest_session and (latest_session.ended_at or latest_session_status in {"completed", "selected", "rejected"})
     )
-    final_decision = latest_session_status if latest_session_status in {"selected", "rejected"} else None
+    final_decision = (
+        (str(result.hr_decision or "").strip().lower() if str(result.hr_decision or "").strip().lower() in {"selected", "rejected"} else None)
+        or (latest_session_status if latest_session_status in {"selected", "rejected"} else None)
+    )
     explanation = result.explanation or {}
+    # NOTE: Dedicated HR review columns are now the source of truth.
+    # Fall back to the legacy explanation JSON only when the new columns are empty.
     final_review = {
-        "final_score": explanation.get("hr_final_score"),
-        "behavioral_score": explanation.get("hr_behavioral_score"),
-        "communication_score": explanation.get("hr_communication_score"),
-        "red_flags": explanation.get("hr_red_flags"),
-        "notes": explanation.get("hr_final_notes"),
+        "final_score": result.hr_final_score if result.hr_final_score is not None else explanation.get("hr_final_score"),
+        "behavioral_score": result.hr_behavioral_score if result.hr_behavioral_score is not None else explanation.get("hr_behavioral_score"),
+        "communication_score": result.hr_communication_score if result.hr_communication_score is not None else explanation.get("hr_communication_score"),
+        "red_flags": result.hr_red_flags if result.hr_red_flags is not None else explanation.get("hr_red_flags"),
+        "notes": result.hr_notes if result.hr_notes is not None else explanation.get("hr_final_notes"),
     }
     final_review_available = final_decision is not None or any(
         value is not None and value != "" for value in final_review.values()

@@ -195,6 +195,8 @@ def _normalize_weight_map(raw_map: dict[str, int] | None) -> dict[str, int]:
     return normalize_skill_map(raw_map)
 
 
+# NOTE: Keep this serializer aligned with the exact field names expected by
+# interview-frontend/src/pages/HRJdManagementPage.jsx and related HR views.
 def _serialize_jd_config(jd: JobDescriptionConfig) -> dict[str, object]:
     return {
         "id": jd.id,
@@ -203,9 +205,12 @@ def _serialize_jd_config(jd: JobDescriptionConfig) -> dict[str, object]:
         "jd_dict_json": jd.jd_dict_json or {},
         "weights_json": jd.weights_json or {},
         "qualify_score": float(jd.qualify_score if jd.qualify_score is not None else 65.0),
+        "education_requirement": jd.education_requirement,
+        "experience_requirement": int(jd.experience_requirement if jd.experience_requirement is not None else 0),
         "min_academic_percent": float(jd.min_academic_percent if jd.min_academic_percent is not None else 0.0),
         "total_questions": int(jd.total_questions if jd.total_questions is not None else 8),
         "project_question_ratio": float(jd.project_question_ratio if jd.project_question_ratio is not None else 0.8),
+        "is_active": bool(jd.is_active if jd.is_active is not None else True),
         "created_at": jd.created_at,
     }
 
@@ -296,18 +301,22 @@ def _resolve_candidate_jd_for_generation(
 # 1) What this does: creates one JD config row for HR and syncs scoring table.
 # 2) Why needed: supports N number of JDs with per-JD scoring config.
 # 3) How it works: stores canonical config in job_descriptions and mirrors to legacy jobs by same id.
-@router.post("/hr/jds")
+@jd_router.post("")
 def hr_create_jd(
     payload: HrJDCreateBody,
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    # NOTE: Persist the full JD management payload used by the current frontend,
+    # including education_requirement and experience_requirement.
     jd_config = JobDescriptionConfig(
         title=payload.title.strip(),
         jd_text=payload.jd_text.strip(),
         jd_dict_json=payload.jd_dict_json or {},
         weights_json=_normalize_weight_map(payload.weights_json),
         qualify_score=float(payload.qualify_score),
+        education_requirement=(payload.education_requirement.strip() if payload.education_requirement else None),
+        experience_requirement=int(payload.experience_requirement if payload.experience_requirement is not None else 0),
         min_academic_percent=float(payload.min_academic_percent),
         total_questions=int(payload.total_questions),
         project_question_ratio=float(payload.project_question_ratio),
@@ -323,7 +332,7 @@ def hr_create_jd(
 # 1) What this does: lists all HR-owned JD configs.
 # 2) Why needed: UI dropdowns and HR config page need JD inventory.
 # 3) How it works: resolves owned legacy ids and fetches matching config rows.
-@router.get("/hr/jds")
+@jd_router.get("")
 def hr_list_jds(
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
@@ -350,7 +359,7 @@ def hr_list_jds(
 # 1) What this does: fetches details for one HR-owned JD config.
 # 2) Why needed: allows per-JD view/edit flows.
 # 3) How it works: verifies HR ownership via legacy jobs table.
-@router.get("/hr/jds/{jd_id}")
+@jd_router.get("/{jd_id:int}")
 def hr_get_jd(
     jd_id: int,
     current_user: SessionUser = Depends(require_role("hr")),
@@ -363,7 +372,7 @@ def hr_get_jd(
 # 1) What this does: updates one HR-owned JD config and syncs scoring table.
 # 2) Why needed: HR can tune qualify score, weights, and question count without re-uploading.
 # 3) How it works: applies partial fields to job_descriptions and mirrors into jobs.
-@router.put("/hr/jds/{jd_id}")
+@jd_router.put("/{jd_id:int}")
 def hr_update_jd(
     jd_id: int,
     payload: HrJDUpdateBody,
@@ -382,6 +391,12 @@ def hr_update_jd(
         jd.weights_json = _normalize_weight_map(payload.weights_json)
     if payload.qualify_score is not None:
         jd.qualify_score = float(payload.qualify_score)
+    # NOTE: These fields are sent by the current HR JD management form and
+    # must be persisted on partial update as-is.
+    if payload.education_requirement is not None:
+        jd.education_requirement = payload.education_requirement.strip() or None
+    if payload.experience_requirement is not None:
+        jd.experience_requirement = int(payload.experience_requirement)
     if payload.min_academic_percent is not None:
         jd.min_academic_percent = float(payload.min_academic_percent)
     if payload.total_questions is not None:
@@ -395,7 +410,32 @@ def hr_update_jd(
     return {"ok": True, "jd": _serialize_jd_config(jd)}
 
 
-@router.delete("/hr/jds/{jd_id}")
+# NOTE: Backward-safe minimal toggle for demo readiness.
+# HR keeps seeing all JDs, while candidate-facing lists only show active ones.
+@jd_router.post("/{jd_id:int}/toggle-active")
+def hr_toggle_jd_active(
+    jd_id: int,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    jd = _get_hr_owned_jd_or_404(db, jd_id, current_user.user_id)
+    legacy_job = (
+        db.query(JobDescription)
+        .filter(JobDescription.id == jd_id, JobDescription.company_id == current_user.user_id)
+        .first()
+    )
+
+    next_active = not bool(jd.is_active if jd.is_active is not None else True)
+    jd.is_active = next_active
+    if legacy_job:
+        legacy_job.is_active = next_active
+
+    db.commit()
+    db.refresh(jd)
+    return {"ok": True, "jd": _serialize_jd_config(jd)}
+
+
+@jd_router.delete("/{jd_id:int}")
 def hr_delete_jd(
     jd_id: int,
     current_user: SessionUser = Depends(require_role("hr")),
@@ -433,6 +473,9 @@ def hr_delete_jd(
     db.delete(jd)
     db.commit()
     return {"ok": True, "jd_id": jd_id, "deleted_upload": deleted_upload}
+
+# Register the JD subrouter after all JD handlers are defined.
+router.include_router(jd_router)
 
 
 # 1) What this does: returns the HR dashboard payload with jobs and shortlisted candidates.
@@ -1000,11 +1043,17 @@ def update_skill_weights(
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    # NOTE: Accept both payload shapes here.
+    # Frontend currently sends: { jd_id, weights, cutoff_score }
+    # Older code may still send: { job_id, skill_scores, cutoff_score, question_count }
+    requested_job_id = payload.job_id or payload.jd_id
+    incoming_skill_scores = payload.skill_scores if payload.skill_scores is not None else payload.weights
+
     target_job = None
-    if payload.job_id:
+    if requested_job_id:
         target_job = (
             db.query(JobDescription)
-            .filter(JobDescription.company_id == current_user.user_id, JobDescription.id == payload.job_id)
+            .filter(JobDescription.company_id == current_user.user_id, JobDescription.id == requested_job_id)
             .first()
         )
     if not target_job:
@@ -1016,10 +1065,14 @@ def update_skill_weights(
         )
     if not target_job:
         raise HTTPException(status_code=404, detail="No JD found")
+    if not incoming_skill_scores:
+        raise HTTPException(status_code=400, detail="weights cannot be empty")
 
+    # NOTE: Normalize whichever field name the caller used so the current
+    # frontend HRSkillWeightsPage.jsx works without renaming its payload.
     target_job.skill_scores = {
         str(key).strip().lower(): int(value)
-        for key, value in payload.skill_scores.items()
+        for key, value in incoming_skill_scores.items()
         if str(key).strip()
     }
     if payload.cutoff_score is not None:

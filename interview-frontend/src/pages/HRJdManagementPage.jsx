@@ -258,6 +258,19 @@ export default function HRJdManagementPage() {
     finally { setDeletingId(null); }
   }
 
+  async function handleToggleActive(jdId) {
+    setError(""); setMessage("");
+    try {
+      const response = await hrApi.toggleJdActive(jdId);
+      const next = response?.jd?.is_active ? "Active" : "Inactive";
+      await loadJds();
+      setMessage(`JD marked ${next}.`);
+      setOpenMenu(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function handleEdit(jdId) {
     try { const r = await hrApi.getJd(jdId); setEditingJd(r.jd); setShowForm(true); setOpenMenu(null); }
     catch (e) { setError(e.message); }
@@ -306,6 +319,7 @@ export default function HRJdManagementPage() {
               <tr className="bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">ID</th>
                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Title</th>
+                <th className="px-6 py-4 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Skills</th>
                 <th className="px-6 py-4 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">Qualify</th>
                 <th className="px-6 py-4 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">Exp</th>
@@ -315,13 +329,18 @@ export default function HRJdManagementPage() {
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
               {!paged.length ? (
-                <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">No JDs found. Create one to get started.</td></tr>
+                <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-500">No JDs found. Create one to get started.</td></tr>
               ) : paged.map((jd) => (
                 <tr key={jd.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-all">
                   <td className="px-6 py-4 text-xs font-bold text-slate-400">{jd.id}</td>
                   <td className="px-6 py-4">
                     <p className="font-bold text-slate-900 dark:text-white">{jd.title}</p>
                     <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{jd.jd_text?.substring(0, 80)}...</p>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-bold border ${jd.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800" : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"}`}>
+                      {jd.is_active ? "Active" : "Inactive"}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap gap-1">
@@ -347,6 +366,7 @@ export default function HRJdManagementPage() {
                       <div className="absolute right-6 mt-2 w-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-10 overflow-hidden">
                         <button onClick={() => navigate(`/hr/jds/${jd.id}`)} className="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"><Eye size={15} />View</button>
                         <button onClick={() => handleEdit(jd.id)} className="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"><Edit2 size={15} />Edit</button>
+                        <button onClick={() => handleToggleActive(jd.id)} className="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">{jd.is_active ? "Deactivate" : "Activate"}</button>
                         <button onClick={() => handleDelete(jd.id)} disabled={deletingId === jd.id} className="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60"><Trash2 size={15} />{deletingId === jd.id ? "Deleting..." : "Delete"}</button>
                       </div>
                     )}
