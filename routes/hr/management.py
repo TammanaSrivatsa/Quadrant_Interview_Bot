@@ -33,6 +33,7 @@ from services.local_exports import create_local_backup_archive
 from services.resume_advice import build_resume_advice
 
 router = APIRouter()
+jd_router = APIRouter(prefix="/hr/jds", tags=["hr-jds"])
 
 PAGE_SIZE = 10
 STATUS_META = {
