@@ -13,6 +13,9 @@ from ai_engine.phase1.scoring import compute_resume_scorecard
 from ai_engine.phase1.matching import extract_text_from_file
 from models import Candidate, HR, JobDescription, JobDescriptionConfig, Result
 from services.jd_sync import extract_min_academic_percent
+from services.pipeline import normalize_stage, record_stage_change, stage_payload
+from services.resume_parser import parse_resume_text
+from services.scoring import build_application_score
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -44,16 +47,14 @@ def _application_stage(result: Result | None, latest_session) -> str | None:
 
     session_status = str(getattr(latest_session, "status", "") or "").strip().lower()
     if session_status in {"selected", "rejected"}:
-        return "final_reviewed"
+        return session_status
     if latest_session and (latest_session.ended_at or session_status == "completed"):
-        return "interview_submitted"
+        return "interview_completed"
     if session_status == "in_progress":
-        return "interview_in_progress"
-    if result.shortlisted and (result.interview_date or "").strip():
-        return "interview_ready"
-    if result.shortlisted:
-        return "screening_shortlisted"
-    return "screening_rejected"
+        return "interview_scheduled"
+    if result.interview_date:
+        return "interview_scheduled"
+    return normalize_stage(result.stage)
 
 
 def interview_access_state(result: Result | None) -> dict[str, object]:
@@ -244,8 +245,12 @@ def serialize_result(result: Result | None) -> dict[str, object] | None:
     return {
         "id": result.id,
         "score": float(result.score or 0),
+        "final_score": float(result.final_score) if result.final_score is not None else None,
         "shortlisted": bool(result.shortlisted),
         "explanation": explanation,
+        "score_breakdown": result.score_breakdown_json or {},
+        "recommendation": result.recommendation,
+        "stage": stage_payload(_application_stage(result, latest_session)),
         "interview_date": result.interview_date,
         "interview_scheduled": bool(access["interview_scheduled"]),
         "interview_ready": bool(access["interview_ready"]),
@@ -294,6 +299,8 @@ def evaluate_resume_for_job(
     job: JobDescription | JobDescriptionConfig,
 ) -> tuple[float, dict[str, object], list[dict[str, str]]]:
     resume_text = extract_text_from_file(candidate.resume_path or "")
+    candidate.resume_text = resume_text
+    candidate.parsed_resume_json = parse_resume_text(resume_text)
     jd_text = _load_jd_text(getattr(job, "jd_text", "") or "")
     jd_skill_scores = (
         getattr(job, "skill_scores", None)
@@ -359,21 +366,32 @@ def upsert_result(
         .order_by(Result.id.desc())
         .first()
     )
+    score_breakdown = build_application_score(
+        resume_score=float(explanation.get("final_resume_score") or score or 0.0),
+        skills_match_score=float(explanation.get("matched_percentage") or 0.0),
+        interview_score=0.0,
+        communication_score=0.0,
+    )
+    target_stage = "shortlisted" if shortlisted else ("screening" if score is not None else "applied")
+
     if current:
+        previous_stage = current.stage
         current.score = score
         current.shortlisted = shortlisted
         current.explanation = explanation
         current.interview_questions = None
+        current.score_breakdown_json = score_breakdown
+        current.final_score = float(score_breakdown["final_weighted_score"])
+        current.recommendation = str(score_breakdown["recommendation"])
         if not current.application_id:
             current.application_id = f"APP-{job_id}-{candidate_id}-{uuid4().hex[:6].upper()}"
         # FIX C4: Do NOT clear interview_date / interview_link / interview_token on re-score.
-        # Previously these were always set to None on every resume re-upload, which wiped a
-        # candidate's scheduled interview if they re-uploaded their resume to improve their score.
-        # Now we only clear them if no schedule exists yet (first upload).
         if not current.interview_date:
             current.interview_date = None
             current.interview_link = None
             current.interview_token = None
+        if previous_stage != target_stage:
+            record_stage_change(db, current, stage=target_stage, changed_by_role="system", changed_by_user_id=None, note="Resume screening updated")
         db.commit()
         db.refresh(current)
         return current
@@ -386,8 +404,14 @@ def upsert_result(
         explanation=explanation,
         application_id=f"APP-{job_id}-{candidate_id}-{uuid4().hex[:6].upper()}",
         interview_questions=None,
+        stage=target_stage,
+        score_breakdown_json=score_breakdown,
+        final_score=float(score_breakdown["final_weighted_score"]),
+        recommendation=str(score_breakdown["recommendation"]),
     )
     db.add(result)
+    db.flush()
+    record_stage_change(db, result, stage=target_stage, changed_by_role="system", changed_by_user_id=None, note="Application created")
     db.commit()
     db.refresh(result)
     return result

@@ -41,6 +41,8 @@ from models import (
 )
 from routes.common import interview_access_state, interview_entry_url
 from routes.dependencies import SessionUser, require_role
+from services.pipeline import record_stage_change
+from services.scoring import build_application_score, evaluate_answer, summarize_interview
 from routes.schemas import InterviewAnswerBody, InterviewEventBody, InterviewStartBody
 from utils.proctoring_cv import analyze_frame, compare_signatures, should_store_periodic
 from utils.scoring import summarize_and_score
@@ -506,7 +508,9 @@ def interview_start(
         if payload.max_questions is not None
         else int(job.question_count if job and job.question_count is not None else 8)
     )
-    configured_max_questions = max(3, min(20, configured_max_questions))
+    # Enforce the configured count directly for the new question planner.
+    # We allow 2+ so the flow still behaves correctly for the smallest valid interviews.
+    configured_max_questions = max(2, min(20, configured_max_questions))
 
     _ensure_question_bank(
         db,
@@ -548,6 +552,8 @@ def interview_start(
             llm_eval_status="pending",
         )
         db.add(session)
+        if result.stage != "interview_scheduled":
+            record_stage_change(db, result, stage="interview_scheduled", changed_by_role="system", changed_by_user_id=None, note="Interview session started")
         db.commit()
         db.refresh(session)
         logger.info(
@@ -648,6 +654,13 @@ def interview_answer(
         time_taken_seconds=safe_time_taken,
         jd_skills=(job.skill_scores or {}).keys() if job else (),
     )
+    answer_evaluation = evaluate_answer(
+        question.text,
+        answer_text,
+        allotted_seconds=question_limit,
+        time_taken_seconds=safe_time_taken,
+        jd_skills=(job.skill_scores or {}).keys() if job else (),
+    )
 
     answer = (
         db.query(InterviewAnswer)
@@ -664,6 +677,7 @@ def interview_answer(
         answer.time_taken_sec = safe_time_taken
         answer.started_at = started_at
         answer.ended_at = now
+        answer.evaluation_json = answer_evaluation
     else:
         answer = InterviewAnswer(
             session_id=session.id,
@@ -673,6 +687,7 @@ def interview_answer(
             time_taken_sec=safe_time_taken,
             started_at=started_at,
             ended_at=now,
+            evaluation_json=answer_evaluation,
         )
         db.add(answer)
 
@@ -710,6 +725,27 @@ def interview_answer(
         session.status = "completed"
         session.ended_at = now
         session.llm_eval_status = "pending"
+        answer_evaluations = [
+            row.evaluation_json
+            for row in db.query(InterviewAnswer).filter(InterviewAnswer.session_id == session.id).all()
+            if isinstance(row.evaluation_json, dict)
+        ]
+        interview_summary = summarize_interview(answer_evaluations)
+        session.evaluation_summary_json = {
+            **interview_summary,
+            "answered_count": answered_count,
+            "total_question_count": max_questions,
+        }
+        result.score_breakdown_json = build_application_score(
+            resume_score=float((result.explanation or {}).get("final_resume_score") or result.score or 0.0),
+            skills_match_score=float((result.explanation or {}).get("matched_percentage") or 0.0),
+            interview_score=float(interview_summary.get("overall_interview_score") or 0.0),
+            communication_score=float(interview_summary.get("communication_score") or 0.0),
+        )
+        result.final_score = float(result.score_breakdown_json["final_weighted_score"])
+        result.recommendation = str(result.score_breakdown_json["recommendation"])
+        if result.stage != "interview_completed":
+            record_stage_change(db, result, stage="interview_completed", changed_by_role="system", changed_by_user_id=None, note="Interview finished")
         db.commit()
         logger.info(
             "interview_completed session_id=%s answered=%s max=%s",
@@ -726,6 +762,7 @@ def interview_answer(
             "max_questions": max_questions,
             "time_limit_seconds": 0,
             "feedback": None,
+            "summary": session.evaluation_summary_json,
         }
 
     db.commit()
@@ -789,6 +826,34 @@ def interview_transcribe(
         }
 
     return {"ok": True, **transcript}
+
+
+@router.get("/interview/session/{session_id}/summary")
+def interview_session_summary(
+    session_id: int,
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    session = _get_candidate_session_or_403(db, session_id, current_user)
+    answers = db.query(InterviewAnswer).filter(InterviewAnswer.session_id == session.id).all()
+    answered_count = len([row for row in answers if (row.answer_text or "").strip() or row.skipped])
+    strengths = []
+    weaknesses = []
+    for row in answers:
+        evaluation = row.evaluation_json or {}
+        strengths.extend(evaluation.get("strengths") or [])
+        weaknesses.extend(evaluation.get("weaknesses") or [])
+    summary = session.evaluation_summary_json or {}
+    return {
+        "ok": True,
+        "session_id": session.id,
+        "status": session.status,
+        "answered_count": answered_count,
+        "total_questions": int(session.max_questions or answered_count),
+        "summary": summary,
+        "strengths": list(dict.fromkeys(strengths))[:5],
+        "weaknesses": list(dict.fromkeys(weaknesses))[:5],
+    }
 
 
 @router.post("/interview/{token}/event")

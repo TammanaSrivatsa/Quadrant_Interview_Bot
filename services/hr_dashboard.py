@@ -8,14 +8,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session, joinedload
 
 from models import JobDescription, Result
-
-STATUS_META = {
-    "applied": {"key": "applied", "label": "Applied", "tone": "secondary"},
-    "shortlisted": {"key": "shortlisted", "label": "Shortlisted", "tone": "success"},
-    "rejected": {"key": "rejected", "label": "Rejected", "tone": "danger"},
-    "interview_scheduled": {"key": "interview_scheduled", "label": "Interview Scheduled", "tone": "primary"},
-    "completed": {"key": "completed", "label": "Completed", "tone": "dark"},
-}
+from services.pipeline import normalize_stage, stage_payload
 
 
 def latest_session(result: Result | None):
@@ -25,25 +18,22 @@ def latest_session(result: Result | None):
 
 
 def status_key(result: Result | None, latest_session_row) -> str:
+    if not result:
+        return "applied"
+    stage = normalize_stage(result.stage)
     if latest_session_row:
         session_status = (latest_session_row.status or "").strip().lower()
-        if latest_session_row.ended_at or session_status in {"completed", "selected", "rejected"}:
-            return "completed"
-        return "interview_scheduled"
-
-    if result and result.interview_date:
-        return "interview_scheduled"
-    if result and result.shortlisted:
-        return "shortlisted"
-    if result and (result.score is None or not result.explanation):
-        return "applied"
-    if result:
-        return "rejected"
-    return "applied"
+        if session_status in {"selected", "rejected"}:
+            return session_status
+        if latest_session_row.ended_at or session_status == "completed":
+            return "interview_completed"
+        if result.interview_date:
+            return "interview_scheduled"
+    return stage
 
 
 def status_payload(result: Result | None, latest_session_row) -> dict[str, str]:
-    return STATUS_META[status_key(result, latest_session_row)]
+    return stage_payload(status_key(result, latest_session_row))
 
 
 def build_hr_dashboard_analytics(
@@ -94,35 +84,53 @@ def build_hr_dashboard_analytics(
             if key:
                 matched_counter[key] += 1
 
-    completed = pipeline_counter.get("completed", 0)
+    completed = pipeline_counter.get("interview_completed", 0)
     scheduled = pipeline_counter.get("interview_scheduled", 0)
     total_results = len(selected_results)
     avg_score = round(sum(score_values) / len(score_values), 2) if score_values else 0.0
+    avg_resume_score = round(
+        sum(float((result.explanation or {}).get("final_resume_score") or result.score or 0) for result in selected_results) / total_results,
+        2,
+    ) if total_results else 0.0
     shortlist_rate = round((shortlisted_count / total_results) * 100, 2) if total_results else 0.0
     completion_rate = round((completed / (completed + scheduled)) * 100, 2) if (completed + scheduled) else 0.0
+    selection_rate = round((pipeline_counter.get("selected", 0) / total_results) * 100, 2) if total_results else 0.0
+    top_ranked = sorted(selected_results, key=lambda item: float(item.final_score or item.score or 0), reverse=True)[:5]
 
     return {
         "overview": {
             "total_jobs": len(jobs),
             "total_applications": total_results,
             "active_candidates": len(candidate_ids),
-            "avg_resume_score": avg_score,
+            "total_candidates": len(candidate_ids),
+            "completed_interviews": completed,
+            "shortlisted_count": pipeline_counter.get("shortlisted", 0),
+            "rejected_count": pipeline_counter.get("rejected", 0),
+            "avg_resume_score": avg_resume_score,
+            "avg_interview_score": avg_score,
             "shortlist_rate": shortlist_rate,
+            "selection_rate": selection_rate,
             "interview_completion_rate": completion_rate,
         },
         "pipeline": [
             {
-                **STATUS_META[key],
+                **stage_payload(key),
                 "count": pipeline_counter.get(key, 0),
             }
-            for key in ("applied", "shortlisted", "interview_scheduled", "completed", "rejected")
+            for key in ("applied", "screening", "shortlisted", "interview_scheduled", "interview_completed", "selected", "rejected")
         ],
-        "top_missing_skills": [
-            {"skill": skill, "count": count}
-            for skill, count in missing_counter.most_common(5)
+        "top_missing_skills": [{"skill": skill, "count": count} for skill, count in missing_counter.most_common(5)],
+        "top_matched_skills": [{"skill": skill, "count": count} for skill, count in matched_counter.most_common(5)],
+        "top_ranked_candidates": [
+            {
+                "result_id": row.id,
+                "application_id": row.application_id,
+                "candidate_uid": row.candidate.candidate_uid if row.candidate else None,
+                "candidate_name": row.candidate.name if row.candidate else None,
+                "final_score": float(row.final_score or row.score or 0),
+                "recommendation": row.recommendation,
+            }
+            for row in top_ranked
         ],
-        "top_matched_skills": [
-            {"skill": skill, "count": count}
-            for skill, count in matched_counter.most_common(5)
-        ],
+        "stage_wise_candidate_count": dict(pipeline_counter),
     }

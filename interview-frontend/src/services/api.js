@@ -66,8 +66,10 @@ function deriveDecision({ status, shortlisted, sessionStatus, finalScore }) {
 }
 
 function normalizeCandidateSummary(item) {
-  const status = toStatusObject(item?.status);
-  const decision = deriveDecision({ status, shortlisted: false, sessionStatus: status.key, finalScore: item?.score });
+  const status = toStatusObject(item?.stage || item?.status);
+  const decision = item?.recommendation
+    ? { key: String(item.recommendation).toLowerCase().replace(/\s+/g, "_"), label: item.recommendation, tone: item.recommended ? "success" : "primary" }
+    : deriveDecision({ status, shortlisted: false, sessionStatus: status.key, finalScore: item?.final_score ?? item?.score });
   return {
     ...item,
     uid: item?.candidate_uid,
@@ -76,27 +78,35 @@ function normalizeCandidateSummary(item) {
     role: item?.job?.title || "Candidate",
     resumeScore: Number(item?.score || 0),
     score: Number(item?.score || 0),
+    finalAIScore: Number((item?.final_score ?? item?.score) || 0),
     interviewStatus: status,
     status,
     finalDecision: decision,
+    recommendationTag: item?.recommendation || decision?.label,
   };
 }
 
 function normalizeApplication(application) {
   const explanation = application?.explanation || {};
   const interviewScoring = explanation?.interview_scoring || {};
-  const status = toStatusObject(application?.status);
-  const decision = deriveDecision({ status, shortlisted: application?.shortlisted, sessionStatus: application?.latest_session?.status, finalScore: interviewScoring?.final_score });
+  const status = toStatusObject(application?.stage || application?.status);
+  const breakdown = application?.score_breakdown || {};
+  const decision = application?.recommendation
+    ? { key: String(application.recommendation).toLowerCase().replace(/\s+/g, "_"), label: application.recommendation, tone: "primary" }
+    : deriveDecision({ status, shortlisted: application?.shortlisted, sessionStatus: application?.latest_session?.status, finalScore: application?.final_score ?? interviewScoring?.final_score });
   return {
     ...application,
     explanation,
     status,
+    stage: status,
     finalDecision: decision,
     resumeScore: typeof explanation?.final_resume_score === "number" ? explanation.final_resume_score : typeof application?.score === "number" ? application.score : 0,
     semanticScore: typeof explanation?.semantic_score === "number" ? explanation.semantic_score : 0,
-    skillMatchScore: typeof explanation?.matched_percentage === "number" ? explanation.matched_percentage : typeof explanation?.weighted_skill_score === "number" ? explanation.weighted_skill_score : 0,
-    interviewScore: typeof interviewScoring?.technical_score === "number" ? interviewScoring.technical_score : null,
-    finalAIScore: typeof interviewScoring?.final_score === "number" ? interviewScoring.final_score : typeof application?.score === "number" ? application.score : 0,
+    skillMatchScore: typeof breakdown?.skills_match_score === "number" ? breakdown.skills_match_score : typeof explanation?.matched_percentage === "number" ? explanation.matched_percentage : typeof explanation?.weighted_skill_score === "number" ? explanation.weighted_skill_score : 0,
+    interviewScore: typeof breakdown?.interview_performance_score === "number" ? breakdown.interview_performance_score : typeof interviewScoring?.technical_score === "number" ? interviewScoring.technical_score : null,
+    communicationScore: typeof breakdown?.communication_behavior_score === "number" ? breakdown.communication_behavior_score : null,
+    finalAIScore: typeof application?.final_score === "number" ? application.final_score : typeof interviewScoring?.final_score === "number" ? interviewScoring.final_score : typeof application?.score === "number" ? application.score : 0,
+    recommendationTag: application?.recommendation || decision?.label,
   };
 }
 
@@ -113,16 +123,20 @@ function normalizeCandidateDetail(data) {
       uid: candidate?.candidate_uid,
       avatar: buildAvatar(candidate?.name),
       role: latestApplication?.job?.title || "Candidate",
-      finalDecision: latestApplication?.finalDecision || deriveDecision({ status: candidate?.current_status }),
+      finalDecision: latestApplication?.finalDecision || deriveDecision({ status: candidate?.current_stage || candidate?.current_status }),
+      currentStage: toStatusObject(candidate?.current_stage || candidate?.current_status),
       resumeScore: latestApplication?.resumeScore ?? 0,
       semanticScore: latestApplication?.semanticScore ?? 0,
       skillMatchScore: latestApplication?.skillMatchScore ?? 0,
       interviewScore: latestApplication?.interviewScore ?? null,
-      finalAIScore: latestApplication?.finalAIScore ?? 0,
+      communicationScore: latestApplication?.communicationScore ?? null,
+      finalAIScore: latestApplication?.finalAIScore ?? candidate?.final_score ?? 0,
       matchedSkills: skillGap?.matched_skills || latestApplication?.explanation?.matched_skills || [],
       missingSkills: skillGap?.missing_skills || latestApplication?.explanation?.missing_skills || [],
       strengths: resumeAdvice?.strengths || [],
       rewriteTips: resumeAdvice?.rewrite_tips || [],
+      parsedResume: candidate?.parsed_resume || {},
+      recommendationTag: candidate?.recommendation || latestApplication?.recommendationTag || latestApplication?.finalDecision?.label,
     },
     applications,
     resume_advice: resumeAdvice,
@@ -185,6 +199,10 @@ export const hrApi = {
   },
   skillGap: (candidateUid, jobId) => request({ method: "get", url: `/hr/candidates/${candidateUid}/skill-gap`, params: jobId ? { job_id: jobId } : undefined }),
   deleteCandidate: (candidateUid) => request({ method: "post", url: `/hr/candidates/${candidateUid}/delete` }),
+  updateCandidateStage: (resultId, payload) => request({ method: "post", url: `/hr/results/${resultId}/stage`, data: payload }),
+  rankedCandidates: (params) => request({ method: "get", url: "/hr/candidates/ranked", params }),
+  compareCandidates: (resultIds) => request({ method: "post", url: "/hr/candidates/compare", data: { result_ids: resultIds } }),
+  assignCandidateToJd: (candidateUid, jdId) => request({ method: "post", url: `/hr/candidates/${candidateUid}/assign-jd`, data: { jd_id: jdId } }),
 
   // Interviews
   interviews: () => request({ method: "get", url: "/hr/interviews" }),
@@ -208,6 +226,7 @@ export const interviewApi = {
   submitAnswer: (payload) => request({ method: "post", url: "/interview/answer", data: payload }),
   transcribe: (formData) => request({ method: "post", url: "/interview/transcribe", data: formData }),
   evaluate: (sessionId) => request({ method: "post", url: `/interview/${sessionId}/evaluate` }),
+  sessionSummary: (sessionId) => request({ method: "get", url: `/interview/session/${sessionId}/summary` }),
 };
 
 export const proctorApi = {

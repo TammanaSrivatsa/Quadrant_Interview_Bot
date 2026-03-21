@@ -28,7 +28,7 @@ class SkillWeightsBody(BaseModel):
     job_id: int | None = None
     jd_id: int | None = None
     cutoff_score: float | None = Field(default=None, ge=0, le=100)
-    question_count: int | None = Field(default=None, ge=3, le=20)
+    question_count: int | None = Field(default=None, ge=2, le=20)
 
 
 class ScheduleInterviewBody(BaseModel):
@@ -47,7 +47,7 @@ class InterviewStartBody(BaseModel):
     consent_given: bool = False
     per_question_seconds: int = Field(default=60, ge=15, le=600)
     total_time_seconds: int = Field(default=1200, ge=300, le=7200)
-    max_questions: int | None = Field(default=None, ge=3, le=20)
+    max_questions: int | None = Field(default=None, ge=2, le=20)
 
 
 class InterviewAnswerBody(BaseModel):
@@ -76,7 +76,7 @@ class HrJDCreateBody(BaseModel):
     education_requirement: str | None = Field(default=None, max_length=50)
     experience_requirement: int = Field(default=0, ge=0, le=100)
     min_academic_percent: float = Field(default=0.0, ge=0, le=100)
-    total_questions: int = Field(default=8, ge=1, le=50)
+    total_questions: int = Field(default=8, ge=2, le=50)
     project_question_ratio: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
@@ -90,9 +90,22 @@ class HrJDUpdateBody(BaseModel):
     education_requirement: str | None = Field(default=None, max_length=50)
     experience_requirement: int | None = Field(default=None, ge=0, le=100)
     min_academic_percent: float | None = Field(default=None, ge=0, le=100)
-    total_questions: int | None = Field(default=None, ge=1, le=50)
+    total_questions: int | None = Field(default=None, ge=2, le=50)
     project_question_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class CandidateSelectJDBody(BaseModel):
+    jd_id: int
+
+
+class StageUpdateBody(BaseModel):
+    stage: str = Field(..., min_length=2, max_length=50)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CandidateCompareBody(BaseModel):
+    result_ids: list[int] = Field(default_factory=list, min_length=1, max_length=10)
+
+
+class CandidateAssignJDBody(BaseModel):
     jd_id: int

@@ -28,6 +28,8 @@ from models import (
     InterviewSession, JobDescription, ProctorEvent, Result,
 )
 from routes.dependencies import require_role, SessionUser
+from services.pipeline import record_stage_change, stage_payload
+from services.scoring import build_application_score
 
 logger = logging.getLogger(__name__)
 
@@ -163,14 +165,15 @@ def interview_detail(
         time_taken_seconds = q.time_taken_seconds if q.time_taken_seconds is not None else (
             latest_answers[q.id].time_taken_sec if q.id in latest_answers else None
         )
-        score_breakdown = compute_answer_scorecard(
+        stored_evaluation = latest_answers[q.id].evaluation_json if q.id in latest_answers and isinstance(latest_answers[q.id].evaluation_json, dict) else None
+        score_breakdown = stored_evaluation.get("score_breakdown") if stored_evaluation else compute_answer_scorecard(
             q.text,
             answer_text or "",
             allotted_seconds=int(q.allotted_seconds or 0),
             time_taken_seconds=int(time_taken_seconds or 0),
             jd_skills=job_skills,
         )
-        ai_answer_score = float(q.relevance_score) if q.relevance_score is not None else float(score_breakdown["overall_score"])
+        ai_answer_score = float((stored_evaluation or {}).get("overall_answer_score") or q.relevance_score or score_breakdown["overall_score"])
         questions_payload.append(
             {
                 "id": q.id,
@@ -187,6 +190,7 @@ def interview_detail(
                 "skipped": q.skipped or (latest_answers[q.id].skipped if q.id in latest_answers else False),
                 "llm_score": q.llm_score,
                 "llm_feedback": q.llm_feedback,
+                "evaluation": stored_evaluation or {},
             }
         )
 
@@ -198,9 +202,11 @@ def interview_detail(
             "candidate": {"id": candidate.id, "name": candidate.name, "email": candidate.email},
             "job": {"id": job.id if job else None, "title": job.jd_title if job else None},
             "status": session.status,
+            "stage": stage_payload(result.stage),
             "started_at": session.started_at,
             "ended_at": session.ended_at,
             "llm_eval_status": session.llm_eval_status or "pending",
+            "evaluation_summary": session.evaluation_summary_json or {},
         },
         "questions": questions_payload,
         "events": [
@@ -266,6 +272,24 @@ def finalize_interview(
 
     if payload.final_score is not None:
         result.score = payload.final_score
+        score_breakdown = build_application_score(
+            resume_score=float((result.explanation or {}).get("final_resume_score") or result.score or 0.0),
+            skills_match_score=float((result.explanation or {}).get("matched_percentage") or 0.0),
+            interview_score=float(payload.final_score),
+            communication_score=float(payload.communication_score or 0.0),
+        )
+        result.final_score = float(score_breakdown["final_weighted_score"])
+        result.score_breakdown_json = score_breakdown
+        result.recommendation = score_breakdown["recommendation"]
+
+    record_stage_change(
+        db,
+        result,
+        stage=payload.decision.lower(),
+        changed_by_role="hr",
+        changed_by_user_id=current_user.user_id,
+        note=payload.notes,
+    )
 
     db.commit()
     return {

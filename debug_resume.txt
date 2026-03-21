@@ -1,0 +1,14 @@
+Debug Candidate
+debug_candidate@example.com
++91 9999999999
+Summary
+Frontend developer with React and JavaScript experience.
+Projects
+Built a React dashboard for analytics and candidate tracking.
+Built a task manager using TypeScript and REST APIs.
+Skills
+React JavaScript TypeScript HTML CSS Git
+Experience
+Worked on frontend features, debugging, and API integration.
+Education
+B.Tech in Computer Science

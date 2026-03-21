@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, XCircle, AlertTriangle, Camera, Clock, RefreshCw } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Camera, Clock, RefreshCw, Sparkles } from "lucide-react";
 import MetricCard from "../components/MetricCard";
 import PageHeader from "../components/PageHeader";
+import StatusBadge from "../components/StatusBadge";
 import { hrApi } from "../services/api";
 import { formatDateTime } from "../utils/formatters";
 
@@ -16,9 +17,7 @@ function scoreColor(score) {
 
 function ScorePill({ score, skipped }) {
   if (skipped) return <span className="text-slate-400 text-xs italic">Skipped</span>;
-  if (score === null || score === undefined) {
-    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800"><Clock size={11} />Pending</span>;
-  }
+  if (score === null || score === undefined) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800"><Clock size={11} />Pending</span>;
   const n = Math.round(Number(score));
   return <span className={`inline-block font-black text-base ${scoreColor(n)}`}>{n}<span className="text-xs font-normal text-slate-400">/100</span></span>;
 }
@@ -78,14 +77,7 @@ export default function HRInterviewDetailPage() {
     setSaving(true);
     setError("");
     try {
-      await hrApi.finalizeInterview(id, {
-        decision,
-        notes,
-        final_score: finalScore ? Number(finalScore) : null,
-        behavioral_score: behavioralScore ? Number(behavioralScore) : null,
-        communication_score: communicationScore ? Number(communicationScore) : null,
-        red_flags: redFlags.trim() || null,
-      });
+      await hrApi.finalizeInterview(id, { decision, notes, final_score: finalScore ? Number(finalScore) : null, behavioral_score: behavioralScore ? Number(behavioralScore) : null, communication_score: communicationScore ? Number(communicationScore) : null, red_flags: redFlags.trim() || null });
       await load();
     } catch (e) {
       setError(e.message);
@@ -111,7 +103,7 @@ export default function HRInterviewDetailPage() {
   const suspiciousEvents = useMemo(() => (data?.events || []).filter((e) => e.suspicious), [data?.events]);
   const { avgLLMScore, pendingCount } = useMemo(() => {
     const questions = data?.questions || [];
-    const scores = questions.filter((q) => !q.skipped).map((q) => Number(q.llm_score ?? q.ai_answer_score)).filter((v) => !isNaN(v) && v > 0);
+    const scores = questions.filter((q) => !q.skipped).map((q) => Number(q.evaluation?.overall_answer_score ?? q.llm_score ?? q.ai_answer_score)).filter((v) => !isNaN(v) && v > 0);
     const pending = questions.filter((q) => !q.skipped && (q.llm_score === null || q.llm_score === undefined)).length;
     return { avgLLMScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null, pendingCount: pending };
   }, [data?.questions]);
@@ -123,10 +115,11 @@ export default function HRInterviewDetailPage() {
   const { interview, questions, events, hr_review, section_summary } = data;
   const evalStatus = interview.llm_eval_status || "pending";
   const canReEvaluate = evalStatus !== "running" && pendingCount > 0;
+  const summary = interview.evaluation_summary || {};
 
   return (
     <div className="space-y-8 pb-12">
-      <PageHeader title={`Interview — ${interview.candidate?.name || "Candidate"}`} subtitle={`${interview.job?.title || "Role"} · Application ${interview.application_id || interview.interview_id}`} actions={<div className="flex items-center gap-3">{canReEvaluate && <button type="button" onClick={handleReEvaluate} disabled={reEvaluating} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold disabled:opacity-60 transition-all"><RefreshCw size={16} className={reEvaluating ? "animate-spin" : ""} />{reEvaluating ? "Starting…" : "Re-run AI Scoring"}</button>}<EvalStatusBadge status={evalStatus} /><button type="button" className="subtle-button" onClick={() => navigate(-1)}>Back</button></div>} />
+      <PageHeader title={`Interview — ${interview.candidate?.name || "Candidate"}`} subtitle={`${interview.job?.title || "Role"} · Application ${interview.application_id || interview.interview_id}`} actions={<div className="flex items-center gap-3 flex-wrap">{canReEvaluate && <button type="button" onClick={handleReEvaluate} disabled={reEvaluating} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold disabled:opacity-60 transition-all"><RefreshCw size={16} className={reEvaluating ? "animate-spin" : ""} />{reEvaluating ? "Starting…" : "Re-run AI Scoring"}</button>}<EvalStatusBadge status={evalStatus} /><StatusBadge status={interview.stage} /><button type="button" className="subtle-button" onClick={() => navigate(-1)}>Back</button></div>} />
 
       {error && <p className="alert error">{error}</p>}
       {reEvalMessage && <p className="rounded-2xl border border-blue-200 bg-blue-50 text-blue-700 px-4 py-3 text-sm font-medium">{reEvalMessage}</p>}
@@ -138,44 +131,23 @@ export default function HRInterviewDetailPage() {
         <MetricCard label="Proctor flags" value={String(suspiciousEvents.length)} hint="Needs review" color="red" />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="card"><p className="eyebrow">Interview score</p><h3>{Math.round(Number(summary.overall_interview_score || 0))}%</h3><p className="muted">Interview-level summary</p></div>
+        <div className="card"><p className="eyebrow">Communication</p><h3>{Math.round(Number(summary.communication_score || 0))}%</h3><p className="muted">Clarity and confidence</p></div>
+        <div className="card"><p className="eyebrow">Recommendation</p><h3>{summary.hiring_recommendation || "Pending"}</h3><p className="muted">Current ATS recommendation</p></div>
+        <div className="card"><p className="eyebrow">Suspicious events</p><h3>{suspiciousEvents.length}</h3><p className="muted">Proctoring review items</p></div>
+      </div>
+
       {Object.keys(section_summary || {}).length > 0 && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{Object.entries(section_summary).map(([section, score]) => <MetricCard key={section} label={`${section} section`} value={`${Math.round(Number(score))}%`} hint="Average score" color="purple" />)}</div>}
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="card stack"><div className="title-row"><div><p className="eyebrow">Overall interview summary</p><h3>Strengths and weaknesses</h3></div><Sparkles className="text-blue-600" size={18} /></div><p><strong>Strengths:</strong> {(summary.strengths_summary || []).join(" ") || "N/A"}</p><p><strong>Weaknesses:</strong> {(summary.weaknesses_summary || []).join(" ") || "N/A"}</p></div>
+        <div className="card stack"><div className="title-row"><div><p className="eyebrow">Suspicious event summary</p><h3>Proctoring overview</h3></div><AlertTriangle className="text-amber-500" size={18} /></div>{suspiciousEvents.length ? suspiciousEvents.slice(0, 5).map((event) => <div key={event.id} className="question-preview-card">{event.event_type} — {formatDateTime(event.created_at)}</div>) : <p className="muted">No suspicious proctoring events were recorded.</p>}</div>
+      </div>
+
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Questions, Answers & AI Review</h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Each answer includes score, reference answer, strengths, and weaknesses.</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                <th className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-8">#</th>
-                <th className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Question</th>
-                <th className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Answer</th>
-                <th className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reference Answer</th>
-                <th className="px-5 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Score</th>
-                <th className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Feedback</th>
-                <th className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Strengths / Weaknesses</th>
-                <th className="px-5 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider w-20">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {(!questions || !questions.length) && <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-500">No questions recorded.</td></tr>}
-              {(questions || []).map((q, idx) => (
-                <tr key={q.id} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${q.skipped ? "opacity-60" : ""}`}>
-                  <td className="px-5 py-4 font-bold text-slate-400">{idx + 1}</td>
-                  <td className="px-5 py-4 text-slate-900 dark:text-white max-w-xs"><p className="line-clamp-3 leading-relaxed">{q.text}</p><div className="mt-1 flex flex-wrap gap-1.5"><span className={`inline-block text-xs px-2 py-0.5 rounded-full ${q.difficulty === "hard" ? "bg-red-50 text-red-600" : q.difficulty === "easy" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>{q.difficulty || "medium"}</span><span className="inline-block text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 capitalize">{q.section || "project"}</span>{q.focus_skill ? <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">{q.focus_skill}</span> : null}</div></td>
-                  <td className="px-5 py-4 text-slate-600 dark:text-slate-300 max-w-xs">{q.skipped ? <span className="italic text-slate-400">Skipped</span> : <p className="line-clamp-4 leading-relaxed text-sm">{q.answer_text || "—"}</p>}</td>
-                  <td className="px-5 py-4 text-slate-600 dark:text-slate-300 max-w-xs"><p className="line-clamp-4 leading-relaxed text-sm">{q.reference_answer || "—"}</p></td>
-                  <td className="px-5 py-4 text-center"><ScorePill score={q.llm_score ?? (q.ai_answer_score > 0 ? q.ai_answer_score : null)} skipped={q.skipped} />{q.dimension_breakdown && Object.keys(q.dimension_breakdown).length > 0 && <div className="mt-2 text-[11px] text-slate-400 space-y-0.5"><div>Rel {q.dimension_breakdown.relevance ?? "—"} · Corr {q.dimension_breakdown.correctness ?? "—"}</div><div>Comp {q.dimension_breakdown.completeness ?? "—"} · Clr {q.dimension_breakdown.clarity ?? "—"}</div></div>}</td>
-                  <td className="px-5 py-4 text-slate-500 dark:text-slate-400 max-w-xs"><p className="text-sm leading-relaxed line-clamp-4">{q.feedback || q.llm_feedback || q.answer_summary || (q.skipped ? "—" : "Pending AI review")}</p></td>
-                  <td className="px-5 py-4 text-slate-500 dark:text-slate-400 max-w-xs text-xs leading-relaxed"><div><p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">Strengths</p>{(q.strengths?.length ? q.strengths : ["—"]).map((item, index) => <p key={`s-${index}`}>• {item}</p>)}</div><div className="mt-2"><p className="font-bold text-amber-600 dark:text-amber-400 mb-1">Weaknesses</p>{(q.weaknesses?.length ? q.weaknesses : ["—"]).map((item, index) => <p key={`w-${index}`}>• {item}</p>)}</div></td>
-                  <td className="px-5 py-4 text-center text-slate-500 text-xs">{q.time_taken_seconds != null ? `${q.time_taken_seconds}s` : "—"}{q.allotted_seconds ? <span className="block text-slate-300">/ {q.allotted_seconds}s</span> : null}</td>
-                </tr>
-              ))}
-            </tbody>
-            {avgLLMScore !== null && <tfoot><tr className="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-200 dark:border-slate-700"><td colSpan={4} className="px-5 py-3 font-bold text-slate-900 dark:text-white">Average AI Score{pendingCount > 0 && <span className="ml-2 text-xs text-amber-600 font-normal">({pendingCount} pending)</span>}</td><td className="px-5 py-3 text-center"><ScorePill score={avgLLMScore} skipped={false} /></td><td colSpan={3} /></tr></tfoot>}
-          </table>
+        <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800"><h3 className="text-lg font-bold text-slate-900 dark:text-white">Questions, Answers & AI Review</h3><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Each answer includes score, reference answer, strengths, weaknesses, and improvement suggestion.</p></div>
+        <div className="space-y-4 p-6">{(!questions || !questions.length) && <p className="text-center text-slate-500">No questions recorded.</p>}{(questions || []).map((q, idx) => <div key={q.id} className={`question-preview-card ${q.skipped ? "opacity-60" : ""}`}><div className="flex items-start justify-between gap-4 flex-wrap"><div><p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">Question {idx + 1} | {q.difficulty || "medium"} | {q.section || "project"}</p><p className="text-sm font-bold text-slate-900 dark:text-white">{q.text}</p></div><ScorePill score={q.evaluation?.overall_answer_score ?? q.llm_score ?? q.ai_answer_score} skipped={q.skipped} /></div><div className="grid md:grid-cols-2 gap-6 mt-4"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Candidate answer</p><p className="text-sm text-slate-600 dark:text-slate-300">{q.answer_text || "(skipped)"}</p></div><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Reference answer</p><p className="text-sm text-slate-600 dark:text-slate-300">{q.reference_answer || "—"}</p></div></div><div className="grid md:grid-cols-4 gap-4 mt-4">{[["Relevance", q.evaluation?.relevance], ["Technical", q.evaluation?.technical_correctness], ["Clarity", q.evaluation?.clarity], ["Communication", q.evaluation?.confidence_communication]].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 px-4 py-3"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</p><p className="text-lg font-black text-slate-900 dark:text-white">{value != null ? `${Math.round(Number(value))}%` : "—"}</p></div>)}</div><div className="grid md:grid-cols-3 gap-4 mt-4"><div><p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-2">Strengths</p>{(q.evaluation?.strengths || []).length ? q.evaluation.strengths.map((item, index) => <p key={`s-${index}`} className="text-sm text-slate-600 dark:text-slate-300">• {item}</p>) : <p className="text-sm text-slate-500">—</p>}</div><div><p className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2">Weaknesses</p>{(q.evaluation?.weaknesses || []).length ? q.evaluation.weaknesses.map((item, index) => <p key={`w-${index}`} className="text-sm text-slate-600 dark:text-slate-300">• {item}</p>) : <p className="text-sm text-slate-500">—</p>}</div><div><p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Suggestion</p><p className="text-sm text-slate-600 dark:text-slate-300">{q.evaluation?.improvement_suggestion || q.feedback || q.llm_feedback || "—"}</p></div></div></div>)}
         </div>
       </div>
 

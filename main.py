@@ -98,6 +98,10 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE candidates ADD COLUMN created_at DATETIME"))
             if "selected_jd_id" not in candidate_cols:
                 conn.execute(text("ALTER TABLE candidates ADD COLUMN selected_jd_id INTEGER"))
+            if "resume_text" not in candidate_cols:
+                conn.execute(text("ALTER TABLE candidates ADD COLUMN resume_text TEXT"))
+            if "parsed_resume_json" not in candidate_cols:
+                conn.execute(text("ALTER TABLE candidates ADD COLUMN parsed_resume_json JSON"))
 
             # ── results ───────────────────────────────────────────────────
             # One interview attempt per (candidate, JD)
@@ -129,6 +133,32 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE results ADD COLUMN hr_notes TEXT"))
             if "hr_red_flags" not in res_cols:
                 conn.execute(text("ALTER TABLE results ADD COLUMN hr_red_flags TEXT"))
+            if "stage" not in res_cols:
+                conn.execute(text("ALTER TABLE results ADD COLUMN stage VARCHAR(50) DEFAULT 'applied' NOT NULL"))
+            if "stage_updated_at" not in res_cols:
+                conn.execute(text("ALTER TABLE results ADD COLUMN stage_updated_at DATETIME"))
+            if "final_score" not in res_cols:
+                conn.execute(text("ALTER TABLE results ADD COLUMN final_score FLOAT"))
+            if "score_breakdown_json" not in res_cols:
+                conn.execute(text("ALTER TABLE results ADD COLUMN score_breakdown_json JSON"))
+            if "recommendation" not in res_cols:
+                conn.execute(text("ALTER TABLE results ADD COLUMN recommendation VARCHAR(50)"))
+
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS application_stage_history (
+                        id INTEGER PRIMARY KEY,
+                        result_id INTEGER NOT NULL,
+                        stage VARCHAR(50) NOT NULL,
+                        note TEXT,
+                        changed_by_role VARCHAR(20),
+                        changed_by_user_id INTEGER,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
 
             # ── interview_answers ─────────────────────────────────────────
             rows = conn.execute(text("PRAGMA table_info(interview_answers)")).fetchall()
@@ -137,6 +167,8 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE interview_answers ADD COLUMN llm_score FLOAT"))
             if "llm_feedback" not in ans_cols:
                 conn.execute(text("ALTER TABLE interview_answers ADD COLUMN llm_feedback TEXT"))
+            if "evaluation_json" not in ans_cols:
+                conn.execute(text("ALTER TABLE interview_answers ADD COLUMN evaluation_json JSON"))
 
             # ── interview_questions_v2 ────────────────────────────────────
             rows = conn.execute(text("PRAGMA table_info(interview_questions_v2)")).fetchall()
@@ -176,6 +208,7 @@ def ensure_schema() -> None:
                 ("paused_until",                   "DATETIME"),
                 # FIX: LLM evaluation job status
                 ("llm_eval_status",                "VARCHAR(20) DEFAULT 'pending' NOT NULL"),
+                ("evaluation_summary_json",        "JSON"),
             ]:
                 if col not in session_cols:
                     conn.execute(text(f"ALTER TABLE interview_sessions ADD COLUMN {col} {defn}"))
@@ -219,6 +252,23 @@ def ensure_schema() -> None:
             conn.execute(
                 text("UPDATE candidates SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL")
             )
+            conn.execute(
+                text(
+                    """
+                    UPDATE results
+                    SET stage = CASE
+                        WHEN LOWER(COALESCE(stage, '')) IN ('selected','rejected','interview_completed','interview_scheduled','shortlisted','screening','applied') THEN LOWER(stage)
+                        WHEN LOWER(COALESCE(hr_decision, '')) IN ('selected','rejected') THEN LOWER(hr_decision)
+                        WHEN interview_date IS NOT NULL THEN 'interview_scheduled'
+                        WHEN shortlisted = 1 THEN 'shortlisted'
+                        WHEN score IS NOT NULL THEN 'screening'
+                        ELSE 'applied'
+                    END
+                    WHERE stage IS NULL OR stage = ''
+                    """
+                )
+            )
+            conn.execute(text("UPDATE results SET stage_updated_at = CURRENT_TIMESTAMP WHERE stage_updated_at IS NULL"))
 
     except Exception as exc:
         # Schema migration is best-effort — log but don't crash startup.

@@ -15,7 +15,7 @@ from ai_engine.phase1.scoring import compute_interview_scoring, compute_resume_s
 from ai_engine.phase1.matching import extract_skills_from_jd, extract_text_from_file
 from database import get_db
 from services.llm.client import extract_skills as llm_extract_skills
-from models import Candidate, InterviewSession, JobDescription, JobDescriptionConfig, Result
+from models import Candidate, InterviewSession, JobDescription, JobDescriptionConfig, Result, ApplicationStageHistory
 from routes.common import (
     UPLOAD_DIR,
     ensure_candidate_profile,
@@ -25,8 +25,9 @@ from routes.common import (
     upsert_result,
 )
 from routes.dependencies import SessionUser, require_role
-from routes.schemas import HrJDCreateBody, HrJDUpdateBody, InterviewScoreBody, SkillWeightsBody
+from routes.schemas import HrJDCreateBody, HrJDUpdateBody, InterviewScoreBody, SkillWeightsBody, StageUpdateBody, CandidateCompareBody, CandidateAssignJDBody
 from services.hr_dashboard import build_hr_dashboard_analytics
+from services.pipeline import normalize_stage, record_stage_change, stage_payload
 from services.jd_sync import normalize_skill_map, sync_config_from_legacy_job, sync_legacy_job_from_config
 from services.local_exports import create_local_backup_archive
 from services.resume_advice import build_resume_advice
@@ -38,13 +39,6 @@ jd_router = APIRouter(prefix="/hr/jds", tags=["hr-jds"])
 # versions and was breaking the frontend's /api/hr/jds/:id and toggle-active calls.
 
 PAGE_SIZE = 10
-STATUS_META = {
-    "applied": {"key": "applied", "label": "Applied", "tone": "secondary"},
-    "shortlisted": {"key": "shortlisted", "label": "Shortlisted", "tone": "success"},
-    "rejected": {"key": "rejected", "label": "Rejected", "tone": "danger"},
-    "interview_scheduled": {"key": "interview_scheduled", "label": "Interview Scheduled", "tone": "primary"},
-    "completed": {"key": "completed", "label": "Completed", "tone": "dark"},
-}
 
 
 # 1) What this does: finds the most recent interview session for a result.
@@ -63,28 +57,25 @@ def _latest_session(result: Result | None) -> InterviewSession | None:
 # 2) Why needed: the UI needs a single normalized status value for labels and filtering.
 # 3) How it works: checks interview state first, then scheduled/shortlisted/rejected fallbacks.
 def _status_key(result: Result | None, latest_session: InterviewSession | None) -> str:
+    if not result:
+        return "applied"
+    stage = normalize_stage(result.stage)
     if latest_session:
         session_status = (latest_session.status or "").strip().lower()
-        if latest_session.ended_at or session_status in {"completed", "selected", "rejected"}:
-            return "completed"
-        return "interview_scheduled"
-
-    if result and result.interview_date:
-        return "interview_scheduled"
-    if result and result.shortlisted:
-        return "shortlisted"
-    if result and (result.score is None or not result.explanation):
-        return "applied"
-    if result:
-        return "rejected"
-    return "applied"
+        if session_status in {"selected", "rejected"}:
+            return session_status
+        if latest_session.ended_at or session_status == "completed":
+            return "interview_completed"
+        if result.interview_date:
+            return "interview_scheduled"
+    return stage
 
 
 # 1) What this does: maps the status key to the UI-ready label and badge tone.
 # 2) Why needed: keeps status presentation consistent across pages.
-# 3) How it works: reuses the shared STATUS_META map.
+# 3) How it works: reuses the shared ATS stage metadata.
 def _status_payload(result: Result | None, latest_session: InterviewSession | None) -> dict[str, str]:
-    return STATUS_META[_status_key(result, latest_session)]
+    return stage_payload(_status_key(result, latest_session))
 
 
 # 1) What this does: builds the candidate summary payload used by the HR list page.
@@ -101,7 +92,11 @@ def _serialize_candidate_summary(candidate: Candidate, result: Result | None) ->
         "resume_path": candidate.resume_path,
         "created_at": candidate.created_at,
         "status": status,
+        "stage": status,
         "score": float(result.score) if result and result.score is not None else None,
+        "final_score": float(result.final_score) if result and result.final_score is not None else None,
+        "recommendation": result.recommendation if result else None,
+        "score_breakdown": result.score_breakdown_json if result else {},
         "result_id": result.id if result else None,
         "application_id": result.application_id if result else None,
         "job": {
@@ -174,14 +169,18 @@ def _matches_query(candidate_summary: dict[str, object], search_text: str) -> bo
 # 2) Why needed: the HR list supports newest-first and score-desc ordering.
 # 3) How it works: sorts in place using a stable tuple key.
 def _sort_candidate_summaries(candidates: list[dict[str, object]], sort: str) -> list[dict[str, object]]:
-    if sort == "score_desc":
-        candidates.sort(
-            key=lambda item: (
-                float(item["score"]) if item.get("score") is not None else -1.0,
-                item.get("created_at") or datetime.min,
-            ),
-            reverse=True,
-        )
+    def score_value(item: dict[str, object]) -> float:
+        if item.get("final_score") is not None:
+            return float(item["final_score"])
+        if item.get("score") is not None:
+            return float(item["score"])
+        return -1.0
+
+    if sort in {"score_desc", "highest_score"}:
+        candidates.sort(key=lambda item: (score_value(item), item.get("created_at") or datetime.min), reverse=True)
+        return candidates
+    if sort == "lowest_score":
+        candidates.sort(key=lambda item: (9999 if score_value(item) < 0 else score_value(item), item.get("created_at") or datetime.min))
         return candidates
 
     candidates.sort(
@@ -524,33 +523,50 @@ def hr_dashboard(
 @router.get("/hr/candidates")
 def hr_candidates(
     q: str = "",
-    status: str = "all",
+    stage: str = "all",
+    status: str | None = None,
     sort: str = "newest",
+    min_score: float | None = None,
+    max_score: float | None = None,
+    job_id: int | None = None,
     page: int = 1,
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     search_text = (q or "").strip().lower()
-    status_key = (status or "all").strip().lower()
-    sort_key = (sort or "newest").strip().lower()
-    if status_key not in {"all", *STATUS_META.keys()}:
+    status_key = normalize_stage(stage if stage not in {None, ""} else status)
+    if (stage or status or "all").strip().lower() == "all":
         status_key = "all"
-    if sort_key not in {"newest", "score_desc"}:
+    sort_key = (sort or "newest").strip().lower()
+    if sort_key not in {"newest", "score_desc", "highest_score", "lowest_score"}:
         sort_key = "newest"
     page_number = max(1, int(page or 1))
 
     candidates = _candidate_summaries(db, current_user.user_id)
-    filtered = [
-        item
-        for item in candidates
-        if (status_key in {"", "all"} or item["status"]["key"] == status_key) and _matches_query(item, search_text)
-    ]
+    if job_id:
+        candidates = [item for item in candidates if int(item.get("job", {}).get("id") or 0) == int(job_id)]
+    filtered = []
+    for item in candidates:
+        score_value = item.get("final_score") if item.get("final_score") is not None else item.get("score")
+        if status_key not in {"", "all"} and item["status"]["key"] != status_key:
+            continue
+        if min_score is not None and (score_value is None or float(score_value) < float(min_score)):
+            continue
+        if max_score is not None and (score_value is None or float(score_value) > float(max_score)):
+            continue
+        if not _matches_query(item, search_text):
+            continue
+        filtered.append(item)
     _sort_candidate_summaries(filtered, sort_key)
 
     total_results = len(filtered)
     total_pages = max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE) if total_results else 1
     if page_number > total_pages:
         page_number = total_pages
+    for index, item in enumerate(filtered, start=1):
+        item["rank"] = index
+        item["recommended"] = index <= 3 and (float(item.get("final_score") or item.get("score") or 0) >= 65.0)
+
     start = (page_number - 1) * PAGE_SIZE
     end = start + PAGE_SIZE
     paged_candidates = filtered[start:end]
@@ -558,6 +574,7 @@ def hr_candidates(
     return {
         "ok": True,
         "q": q,
+        "stage": status_key,
         "status": status_key,
         "sort": sort_key,
         "page": page_number,
@@ -574,6 +591,29 @@ def hr_candidates(
 # 1) What this does: returns the full HR candidate detail payload.
 # 2) Why needed: powers the detail page for one candidate and their applications.
 # 3) How it works: loads the candidate, verifies HR ownership via scoped results, and returns application history.
+@router.get("/hr/candidates/ranked")
+def hr_ranked_candidates(
+    job_id: int | None = None,
+    limit: int = 10,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    payload = hr_candidates(
+        q="",
+        stage="all",
+        status=None,
+        sort="highest_score",
+        min_score=None,
+        max_score=None,
+        job_id=job_id,
+        page=1,
+        current_user=current_user,
+        db=db,
+    )
+    ranked = list(payload.get("candidates") or [])[: max(1, min(50, int(limit)))]
+    return {"ok": True, "candidates": ranked}
+
+
 @router.get("/hr/candidates/{candidate_uid}")
 def hr_candidate_detail(
     candidate_uid: str,
@@ -600,6 +640,12 @@ def hr_candidate_detail(
     applications: list[dict[str, object]] = []
     for result in results:
         latest_session = _latest_session(result)
+        stage_history_rows = (
+            db.query(ApplicationStageHistory)
+            .filter(ApplicationStageHistory.result_id == result.id)
+            .order_by(ApplicationStageHistory.created_at.asc(), ApplicationStageHistory.id.asc())
+            .all()
+        )
         applications.append(
             {
                 "result_id": result.id,
@@ -609,16 +655,32 @@ def hr_candidate_detail(
                     "title": (result.job.jd_title or Path(result.job.jd_text).name) if result.job else None,
                 },
                 "score": float(result.score) if result.score is not None else None,
+                "final_score": float(result.final_score) if result.final_score is not None else None,
+                "recommendation": result.recommendation,
+                "score_breakdown": result.score_breakdown_json or {},
                 "shortlisted": bool(result.shortlisted),
                 "status": _status_payload(result, latest_session),
+                "stage": _status_payload(result, latest_session),
                 "interview_date": result.interview_date,
                 "interview_link": result.interview_link,
                 "explanation": result.explanation or {},
+                "stage_history": [
+                    {
+                        "id": row.id,
+                        "stage": stage_payload(row.stage),
+                        "note": row.note,
+                        "changed_by_role": row.changed_by_role,
+                        "changed_by_user_id": row.changed_by_user_id,
+                        "created_at": row.created_at,
+                    }
+                    for row in stage_history_rows
+                ],
                 "latest_session": {
                     "id": latest_session.id,
                     "status": latest_session.status,
                     "started_at": latest_session.started_at,
                     "ended_at": latest_session.ended_at,
+                    "evaluation_summary": latest_session.evaluation_summary_json or {},
                 }
                 if latest_session
                 else None,
@@ -665,9 +727,14 @@ def hr_candidate_detail(
             "name": candidate.name,
             "email": candidate.email,
             "resume_path": candidate.resume_path,
+            "resume_text": candidate.resume_text,
+            "parsed_resume": candidate.parsed_resume_json or {},
             "created_at": candidate.created_at,
             "current_status": latest_application["status"],
+            "current_stage": latest_application["stage"],
             "current_score": latest_application["score"],
+            "final_score": latest_application.get("final_score"),
+            "recommendation": latest_application.get("recommendation"),
         },
         "applications": applications,
         "generated_questions": generated_questions,
@@ -698,6 +765,113 @@ def hr_candidate_detail(
 # 1) What this does: returns skill-gap details for a candidate against one JD.
 # 2) Why needed: the HR candidate detail page needs matched and missing skills for quick review.
 # 3) How it works: finds the candidate, resolves the requested or latest HR-owned job, extracts resume text, and reuses existing skill-match logic.
+@router.post("/hr/candidates/{candidate_uid}/assign-jd")
+def hr_assign_candidate_to_jd(
+    candidate_uid: str,
+    payload: CandidateAssignJDBody,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    candidate = db.query(Candidate).filter(Candidate.candidate_uid == candidate_uid).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    job = (
+        db.query(JobDescription)
+        .filter(JobDescription.id == payload.jd_id, JobDescription.company_id == current_user.user_id)
+        .first()
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="JD not found")
+
+    candidate.selected_jd_id = job.id
+    changed = ensure_candidate_profile(candidate, db)
+    result = None
+    if candidate.resume_path:
+        evaluation = evaluate_resume_for_job(candidate, job)
+        result = upsert_result(db, candidate_id=candidate.id, job_id=job.id, score=evaluation["score"], explanation=evaluation["explanation"])
+    if changed:
+        db.commit()
+    else:
+        db.commit()
+    return {
+        "ok": True,
+        "candidate_uid": candidate.candidate_uid,
+        "jd_id": job.id,
+        "result": serialize_result(result) if result else None,
+    }
+
+
+@router.post("/hr/results/{result_id}/stage")
+def hr_update_candidate_stage(
+    result_id: int,
+    payload: StageUpdateBody,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    result = (
+        _candidate_result_scope(db, current_user.user_id)
+        .filter(Result.id == result_id)
+        .first()
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    record_stage_change(
+        db,
+        result,
+        stage=payload.stage,
+        changed_by_role="hr",
+        changed_by_user_id=current_user.user_id,
+        note=payload.note,
+    )
+    stage_key = normalize_stage(payload.stage)
+    result.shortlisted = stage_key in {"shortlisted", "interview_scheduled", "interview_completed", "selected"}
+    if stage_key == "interview_scheduled" and not result.interview_date:
+        result.interview_date = datetime.utcnow().isoformat(timespec="minutes")
+    db.commit()
+    db.refresh(result)
+    return {"ok": True, "result_id": result.id, "stage": stage_payload(result.stage)}
+
+
+@router.post("/hr/candidates/compare")
+def hr_compare_candidates(
+    payload: CandidateCompareBody,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    result_ids = [int(value) for value in payload.result_ids[:10]]
+    results = (
+        _candidate_result_scope(db, current_user.user_id)
+        .filter(Result.id.in_(result_ids))
+        .all()
+    )
+    comparisons = []
+    for result in results:
+        latest_session = _latest_session(result)
+        comparisons.append(
+            {
+                "result_id": result.id,
+                "application_id": result.application_id,
+                "candidate": {
+                    "id": result.candidate.id if result.candidate else None,
+                    "name": result.candidate.name if result.candidate else None,
+                    "candidate_uid": result.candidate.candidate_uid if result.candidate else None,
+                },
+                "job": {"id": result.job.id if result.job else None, "title": result.job.jd_title if result.job else None},
+                "stage": stage_payload(result.stage),
+                "score": result.score,
+                "final_score": result.final_score,
+                "recommendation": result.recommendation,
+                "score_breakdown": result.score_breakdown_json or {},
+                "parsed_resume": (result.candidate.parsed_resume_json or {}) if result.candidate else {},
+                "interview_summary": (latest_session.evaluation_summary_json if latest_session else {}) or {},
+            }
+        )
+    comparisons.sort(key=lambda item: float(item.get("final_score") or item.get("score") or 0), reverse=True)
+    return {"ok": True, "candidates": comparisons}
+
+
 @router.get("/hr/candidates/{candidate_uid}/skill-gap")
 def hr_candidate_skill_gap(
     candidate_uid: str,

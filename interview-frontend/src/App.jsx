@@ -15,6 +15,7 @@ import HRJdDetailPage from "./pages/HRJdDetailPage";
 import HRAnalyticsPage from "./pages/HRAnalyticsPage";
 import HRBackupPage from "./pages/HRBackupPage";
 import HRProctoringPage from "./pages/HRProctoringPage";
+import CandidateComparisonPage from "./pages/CandidateComparisonPage";
 import CandidateDashboardPage from "./pages/CandidateDashboardPage";
 import PracticeInterviewPage from "./pages/PracticeInterviewPage";
 import PreCheck from "./pages/PreCheck";
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/hr/jds" element={<HRJdManagementPage />} />
           <Route path="/hr/jds/:jdId" element={<HRJdDetailPage />} />
           <Route path="/hr/candidates" element={<HRCandidatesPage />} />
+          <Route path="/hr/compare" element={<CandidateComparisonPage />} />
           <Route path="/hr/candidates/:candidateUid" element={<HRCandidateDetailPage />} />
           <Route path="/hr/interviews" element={<HRInterviewListPage />} />
           <Route path="/hr/interviews/:id" element={<HRInterviewDetailPage />} />

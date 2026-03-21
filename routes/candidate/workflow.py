@@ -6,10 +6,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
-
+from services.question_generation import build_question_bundle
 from ai_engine.phase1.scoring import compute_resume_skill_match
 from ai_engine.phase1.matching import extract_text_from_file
-from ai_engine.phase2.question_builder import build_question_bundle
 from database import get_db
 from models import JobDescription, JobDescriptionConfig, Result
 from routes.common import (
@@ -33,19 +32,20 @@ from utils.email_service import send_interview_email
 router = APIRouter()
 
 
+# KEEP: Result.interview_questions remains the result-level source of truth.
+# DISABLE: the older duplicate helper `_persist_result_question_bank` has been removed.
+# REPLACE: this single helper now uses the shared planner via services.question_generation.
 def _generate_result_question_bank(
     *,
     result: Result,
     resume_text: str,
     job: JobDescription,
-    project_ratio: float | None = None,
 ) -> list[dict[str, object]]:
     bundle = build_question_bundle(
         resume_text=resume_text,
         jd_title=job.jd_title,
         jd_skill_scores=(job.skill_scores or {}),
         question_count=int(job.question_count if job.question_count is not None else 8),
-        project_ratio=project_ratio,
     )
     questions = bundle.get("questions") or []
     result.interview_questions = questions
@@ -256,12 +256,7 @@ def upload_resume(
     # Main restored flow: generate and persist interview questions immediately
     # after resume-vs-JD screening. Result.interview_questions is the source of truth.
     resume_text = extract_text_from_file(candidate.resume_path)
-    questions = _generate_result_question_bank(
-        result=result,
-        resume_text=resume_text,
-        job=selected_job,
-        project_ratio=float(getattr(selected_jd, "project_question_ratio", None)) if getattr(selected_jd, "project_question_ratio", None) is not None else None,
-    )
+    questions = _generate_result_question_bank(result=result, resume_text=resume_text, job=selected_job)
     db.commit()
     db.refresh(result)
 
@@ -284,8 +279,6 @@ def upload_resume(
         "selected_jd_id": selected_job.id,
         "result": serialize_result(result),
         "question_count": len(questions or []),
-        "question_generation_ready": bool(result.interview_questions),
-        "diagnostic_first_question": (questions[0].get("text") if questions else None),
         "resume_advice": _resume_advice_payload(
             candidate=candidate,
             selected_jd=selected_jd,

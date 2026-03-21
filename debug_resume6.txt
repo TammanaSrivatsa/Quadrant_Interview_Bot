@@ -1,0 +1,11 @@
+Debug Candidate Six
+debug_candidate6@example.com
+Projects
+Inventory dashboard using React and TypeScript.
+Billing portal with JavaScript and REST APIs.
+Skills
+React JavaScript TypeScript HTML CSS Git
+Experience
+Built frontend modules, fixed bugs, and integrated APIs.
+Education
+B.Tech in IT

@@ -53,6 +53,9 @@ def compute_dynamic_seconds(base_seconds: int, question_index: int, last_answer:
     return max(30, min(180, int(base_seconds) + stage_bonus + answer_adjust))
 
 
+# DISABLE: this helper is kept only for backward compatibility.
+# REPLACE: live interview progression now relies on persisted InterviewQuestion rows
+# created from the single question plan source of truth, not dynamic next-question selection.
 def next_question_payload(source_questions: list[dict[str, object]], asked_questions: list[str], question_index: int, last_answer: str, jd_title: str | None, max_questions: int = 8) -> dict[str, object]:
     asked_set = {t.strip().lower() for t in asked_questions if t.strip()}
     for item in source_questions:

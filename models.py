@@ -16,6 +16,18 @@ from sqlalchemy.orm import relationship
 
 from database import Base
 
+# NOTE: Central ATS pipeline stages reused across screening, interview, ranking,
+# and HR review screens.
+APPLICATION_STAGES = (
+    "applied",
+    "screening",
+    "shortlisted",
+    "interview_scheduled",
+    "interview_completed",
+    "selected",
+    "rejected",
+)
+
 
 class Candidate(Base):
     __tablename__ = "candidates"
@@ -27,6 +39,10 @@ class Candidate(Base):
     password = Column(String(200))
     gender = Column(String(20))
     resume_path = Column(String(300))
+    # NOTE: Keep raw resume text and parsed structured resume data available for
+    # ATS views, ranking, and HR detail pages.
+    resume_text = Column(Text, nullable=True)
+    parsed_resume_json = Column(JSON, nullable=True)
     selected_jd_id = Column(Integer, ForeignKey("job_descriptions.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=True, index=True)
 
@@ -106,6 +122,12 @@ class Result(Base):
     interview_questions = Column(JSON, nullable=True)
     interview_token = Column(String, nullable=True)
     events_json = Column(JSON, nullable=True)
+    # NOTE: ATS pipeline state and final ranking values live on the application row.
+    stage = Column(String(50), default="applied", nullable=False, index=True)
+    stage_updated_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    final_score = Column(Float, nullable=True)
+    score_breakdown_json = Column(JSON, nullable=True)
+    recommendation = Column(String(50), nullable=True)
 
     # FIX: Dedicated HR decision columns — no longer stored inside explanation JSON.
     # This prevents silent data loss when multiple code paths write to explanation.
@@ -119,6 +141,7 @@ class Result(Base):
     candidate = relationship("Candidate", back_populates="results")
     job = relationship("JobDescription", back_populates="results")
     sessions = relationship("InterviewSession", back_populates="result")
+    stage_history = relationship("ApplicationStageHistory", cascade="all, delete-orphan")
 
 
 class InterviewSession(Base):
@@ -143,6 +166,8 @@ class InterviewSession(Base):
     # NEW: track LLM evaluation job status
     llm_eval_status = Column(String(20), default="pending", nullable=False)
     # values: pending | running | completed | failed
+    # NOTE: Interview-level ATS summary for completed page and HR review.
+    evaluation_summary_json = Column(JSON, nullable=True)
 
     candidate = relationship("Candidate", back_populates="interviews")
     result = relationship("Result", back_populates="sessions")
@@ -192,9 +217,23 @@ class InterviewAnswer(Base):
     time_taken_sec = Column(Integer, default=0, nullable=False)
     llm_score = Column(Float, nullable=True)
     llm_feedback = Column(Text, nullable=True)
+    # NOTE: Structured per-answer evaluation used by ATS review pages.
+    evaluation_json = Column(JSON, nullable=True)
 
     session = relationship("InterviewSession", back_populates="answers")
     question = relationship("InterviewQuestion", back_populates="answers")
+
+
+class ApplicationStageHistory(Base):
+    __tablename__ = "application_stage_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    result_id = Column(Integer, ForeignKey("results.id"), nullable=False, index=True)
+    stage = Column(String(50), nullable=False, index=True)
+    note = Column(Text, nullable=True)
+    changed_by_role = Column(String(20), nullable=True)
+    changed_by_user_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
 class ProctorEvent(Base):

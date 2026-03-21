@@ -62,10 +62,17 @@ def build_resume_advice(
     project_tips = []
     for index, project in enumerate(projects[:2], start=1):
         focus_skill = priority_gaps[index - 1]["skill"] if len(priority_gaps) >= index else (strengths[0] if strengths else "your core stack")
-        tech_stack = ", ".join(project.get("tech_stack") or []) or "the exact stack you used"
+        # Compatibility fix: older project extraction returned dicts, while newer
+        # resume parsing may surface plain strings. Support both shapes safely.
+        if isinstance(project, dict):
+            tech_stack = ", ".join(project.get("tech_stack") or []) or "the exact stack you used"
+            title = project.get("title") or f"Project {index}"
+        else:
+            tech_stack = "the exact stack you used"
+            title = str(project or f"Project {index}").strip() or f"Project {index}"
         project_tips.append(
             {
-                "title": project.get("title") or f"Project {index}",
+                "title": title,
                 "tip": f"Rewrite this project with the problem, your ownership, {tech_stack}, measurable impact, and where {focus_skill} was applied.",
             }
         )
