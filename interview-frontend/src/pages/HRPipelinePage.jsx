@@ -5,23 +5,7 @@ import { Eye, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import StatusBadge from "../components/StatusBadge";
 import ScoreBadge from "../components/ScoreBadge";
 import { hrApi } from "../services/api";
-
-const PIPELINE_STAGES = [
-  { key: "applied", label: "Applied" },
-  { key: "screening", label: "Screening" },
-  { key: "shortlisted", label: "Shortlisted" },
-  { key: "interview_scheduled", label: "Interview Scheduled" },
-  { key: "interview_completed", label: "Interview Completed" },
-  { key: "selected", label: "Selected" },
-  { key: "rejected", label: "Rejected" },
-];
-
-const VALID_STAGE_KEYS = new Set(PIPELINE_STAGES.map((stage) => stage.key));
-
-function normalizeStageKey(value) {
-  const key = String(value || "").trim().toLowerCase();
-  return VALID_STAGE_KEYS.has(key) ? key : "applied";
-}
+import { ATS_STAGE_DEFINITIONS as PIPELINE_STAGES, normalizeStageKey } from "../utils/stages";
 
 function getCandidateJdId(candidate) {
   const jdId = candidate?.assignedJd?.id ?? candidate?.job?.id ?? null;

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Download, Mail, Calendar, Sparkles, Save } from "lucide-react";
 import StatusBadge from "../components/StatusBadge";
 import { hrApi } from "../services/api";
+import { ATS_STAGE_OPTIONS } from "../utils/stages";
 
 function downloadHref(path) {
   if (!path) return "";
@@ -198,7 +199,7 @@ export default function HRCandidateDetailPage() {
           <div className="card stack">
             <div className="title-row"><div><p className="eyebrow">HR workflow</p><h3>Stage and JD controls</h3></div></div>
             <StatusBadge status={candidate?.currentStage} />
-            {latestApplication?.result_id ? <select value="" onChange={(e) => e.target.value && handleStageUpdate(latestApplication.result_id, e.target.value)}><option value="">Move stage</option><option value="screening">Screening</option><option value="shortlisted">Shortlisted</option><option value="interview_scheduled">Interview Scheduled</option><option value="interview_completed">Interview Completed</option><option value="selected">Selected</option><option value="rejected">Rejected</option></select> : null}
+            {latestApplication?.result_id ? <select value="" onChange={(e) => e.target.value && handleStageUpdate(latestApplication.result_id, e.target.value)}><option value="">Move stage</option>{ATS_STAGE_OPTIONS.filter((stage) => stage.value !== "applied").map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}</select> : null}
             <select value="" onChange={(e) => e.target.value && handleAssignJd(e.target.value)}>
               <option value="">Assign to JD</option>
               {availableJds.map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}

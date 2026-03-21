@@ -1,4 +1,5 @@
 import axios from "axios";
+import { toStatusObject } from "../utils/stages";
 
 const apiClient = axios.create({
   // NOTE: Keep frontend API calls relative so Vite dev proxy forwards /api to the backend.
@@ -27,29 +28,6 @@ async function request(config) {
   } catch (error) {
     throw new Error(extractErrorMessage(error));
   }
-}
-
-function toStatusObject(status) {
-  if (status && typeof status === "object" && status.label) return status;
-  const raw = String(status || "").trim().toLowerCase();
-  const map = {
-    analyzed: { key: "analyzed", label: "Analyzed", tone: "success" },
-    pending: { key: "pending", label: "Pending", tone: "secondary" },
-    scheduled: { key: "scheduled", label: "Scheduled", tone: "primary" },
-    completed: { key: "completed", label: "Completed", tone: "dark" },
-    shortlisted: { key: "shortlisted", label: "Shortlisted", tone: "success" },
-    rejected: { key: "rejected", label: "Rejected", tone: "danger" },
-    interview_scheduled: { key: "interview_scheduled", label: "Interview Scheduled", tone: "primary" },
-    applied: { key: "applied", label: "Applied", tone: "secondary" },
-    selected: { key: "selected", label: "Selected", tone: "success" },
-    not_started: { key: "not_started", label: "Not Started", tone: "secondary" },
-    in_progress: { key: "in_progress", label: "In Progress", tone: "primary" },
-  };
-  return map[raw] || {
-    key: raw || "unknown",
-    label: raw ? raw.split(/[_\s-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ") : "Unknown",
-    tone: "secondary",
-  };
 }
 
 function deriveDecision({ status, shortlisted, sessionStatus, finalScore }) {
