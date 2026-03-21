@@ -2,7 +2,7 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Users, ClipboardList, Settings, LogOut,
-  MessageSquare, BarChart3, Video, FileText, LayoutGrid, Download
+  MessageSquare, BarChart3, Video, FileText, LayoutGrid, Download, Columns3
 } from "lucide-react";
 import { useAuth } from "../context/useAuth";
 import { cn } from "../utils/utils";
@@ -16,6 +16,7 @@ export default function Sidebar() {
   const hrLinks = [
     { name: "Dashboard",         path: "/hr",              icon: LayoutDashboard },
     { name: "Candidates",        path: "/hr/candidates",   icon: Users },
+    { name: "Pipeline",          path: "/hr/pipeline",     icon: Columns3 },
     { name: "JD Management",     path: "/hr/jds",          icon: FileText },
     { name: "Score Matrix",      path: "/hr/matrix",       icon: LayoutGrid },
     { name: "Interview Reviews", path: "/hr/interviews",   icon: ClipboardList },
