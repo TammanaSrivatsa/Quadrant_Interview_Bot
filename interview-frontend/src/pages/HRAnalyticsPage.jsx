@@ -92,7 +92,7 @@ export default function HRAnalyticsPage() {
       try {
         const [dashRes, jdsRes] = await Promise.all([hrApi.dashboard(), hrApi.listJds()]);
         setDashboard(dashRes);
-        setJds(jdsRes?.jds || []);
+        setJds(Array.isArray(jdsRes) ? jdsRes : jdsRes?.jds || jdsRes?.jobs || []);
 
         // Load all candidates with details for deeper analytics
         let pageNumber = 1;

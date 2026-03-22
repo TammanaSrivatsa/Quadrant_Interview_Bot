@@ -10,6 +10,7 @@ import ScoreBadge from "../components/ScoreBadge";
 import ScoreProgressCell from "../components/ScoreProgressCell";
 import MetricCard from "../components/MetricCard";
 import { hrApi } from "../services/api";
+import { ATS_STAGE_OPTIONS } from "../utils/stages";
 import { cn } from "../utils/utils";
 
 function SortButton({ column, label, sortKey, onSort }) {
@@ -51,7 +52,7 @@ export default function HRScoreMatrixPage() {
     try {
       // Load JDs for the filter dropdown
       const jdsResponse = await hrApi.listJds();
-      setJdList(jdsResponse?.jds || []);
+      setJdList(Array.isArray(jdsResponse) ? jdsResponse : jdsResponse?.jds || jdsResponse?.jobs || []);
 
       let pageNumber = 1;
       let hasMore = true;
@@ -270,11 +271,8 @@ export default function HRScoreMatrixPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option value="all">Interview Status: All</option>
-            <option value="applied">Applied</option>
-            <option value="shortlisted">Shortlisted</option>
-            <option value="interview_scheduled">Interview Scheduled</option>
+            {ATS_STAGE_OPTIONS.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
             <option value="completed">Completed</option>
-            <option value="rejected">Rejected</option>
           </select>
           <select
             className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white"

@@ -235,7 +235,7 @@ export default function HRJdManagementPage() {
 
   const loadJds = useCallback(async () => {
     setLoading(true); setError("");
-    try { const r = await hrApi.listJds(); setJds(r?.jds || []); }
+    try { const r = await hrApi.listJds(); setJds(Array.isArray(r) ? r : r?.jds || r?.jobs || []); }
     catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, []);
