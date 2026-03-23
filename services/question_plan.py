@@ -455,63 +455,121 @@ def _pick_evidence(candidate: dict[str, object], category: str, role_family: str
 
 
 
+def get_resume_module(resume: StructuredResume) -> str:
+    text_pool = " ".join(
+        [resume.summary]
+        + [item.text for item in resume.projects[:6]]
+        + [item.text for item in resume.experiences[:6]]
+    ).lower()
+    mapping = [
+        (("resume", "screen"), "resume screening system"),
+        (("backend", "api"), "backend API system"),
+        (("nlp", "scoring"), "NLP scoring system"),
+        (("ai", "proctor"), "AI proctoring system"),
+        (("candidate", "tracking"), "candidate tracking database"),
+        (("database", "sql"), "candidate tracking database"),
+        (("scoring",), "scoring system"),
+        (("api",), "backend API system"),
+        (("workflow",), "workflow system"),
+        (("screening",), "screening system"),
+    ]
+    for keywords, label in mapping:
+        if all(keyword in text_pool for keyword in keywords):
+            return label
+    return "system"
+
+
+
+def _clean_label(value: str | None, fallback: str) -> str:
+    cleaned = _clean(value)
+    if not cleaned:
+        return fallback
+    cleaned = re.sub(r"^[\-•*\d.\)\(\s]+", "", cleaned)
+    cleaned = re.split(r"[;:,.!?]|\b(using|built|developed|implemented|designed|worked on|responsible for|with)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
+    words = cleaned.split()
+    if not words:
+        return fallback
+    return " ".join(words[:6])
+
+
+
+def _slot_candidate(category: str, context: PlannerContext) -> dict[str, object]:
+    module_label = get_resume_module(context.resume)
+    project_item = context.resume.projects[0] if context.resume.projects else None
+    experience_item = context.resume.experiences[0] if context.resume.experiences else None
+    backend_item = None
+    for item in context.resume.projects + context.resume.experiences:
+        lowered = item.text.lower()
+        if any(term in lowered for term in ("backend", "api", "service", "pipeline", "workflow", "database", "fastapi", "sql")):
+            backend_item = item
+            break
+    candidate_map = {
+        "intro": ("intro", _clean_label(context.jd.title or context.title, "your background"), None),
+        "project": ("project", _clean_label(project_item.text if project_item else module_label, module_label), [project_item] if project_item else []),
+        "deep_dive": ("project", _clean_label(project_item.text if project_item else module_label, module_label), [project_item] if project_item else []),
+        "backend": ("project", _clean_label(backend_item.text if backend_item else module_label, module_label), [backend_item] if backend_item else []),
+        "debugging": ("project", _clean_label(project_item.text if project_item else module_label, module_label), [project_item] if project_item else []),
+        "architecture": ("project", _clean_label(project_item.text if project_item else module_label, module_label), [project_item] if project_item else []),
+        "leadership": ("project", _clean_label(experience_item.text if experience_item else "your recent work", "your recent work"), [experience_item] if experience_item else []),
+    }
+    kind, label, evidence = candidate_map[category]
+    return {
+        "kind": kind,
+        "label": label or module_label,
+        "priority_source": "structured_slot",
+        "score": 0.9,
+        "resume_alignment": 0.8,
+        "jd_alignment": 0.7,
+        "role_alignment": 0.8,
+        "evidence": evidence,
+    }
+
+
+
 def _question_text(category: str, candidate: dict[str, object], context: PlannerContext, index: int) -> tuple[str, str | None]:
-    label = str(candidate["label"])
+    label = _clean_label(str(candidate.get("label") or ""), get_resume_module(context.resume))
     evidence = _pick_evidence(candidate, category, context.role_family)
     evidence_text = evidence.text if evidence else None
-    skill = label if candidate.get("kind") == "skill" else None
-    title = context.jd.title or context.title or "the role"
+    role_label = _clean(context.jd.title or context.title or "this role")
+    module_label = get_resume_module(context.resume)
+    target = label or module_label or "system"
 
-    # Improved, less repetitive, more natural fallback wording
-    if category == "deep_dive":
-        if skill and evidence_text:
-            return (
-                f"Think back to a recent challenge where {skill} was essential. What was the scenario, what decisions did you face, and how did you navigate trade-offs?",
-                evidence_text,
-            )
-        if skill:
-            return (
-                f"Describe a situation where your expertise in {skill} directly influenced the outcome. What complexities did you encounter, and how did you resolve them?",
-                None,
-            )
+    if category == "intro":
         return (
-            f"Share a technically demanding problem you solved recently. What made it complex, and what was your approach to overcoming obstacles?",
+            f"Please introduce yourself briefly and connect your background to {role_label}, highlighting the project or system that best represents your work.",
             evidence_text,
         )
-
     if category == "project":
-        if evidence_text:
-            return (
-                f"Choose a project from your experience—what problem were you addressing, what did you personally own, and how did you measure success?",
-                evidence_text,
-            )
         return (
-            f"Tell me about a project where your contribution changed the outcome. What was your role, and how did you know it worked?",
-            None,
+            f"Walk me through {target}: what problem was it solving, what did you personally own, and how did you measure whether it worked?",
+            evidence_text,
         )
-
+    if category == "deep_dive":
+        return (
+            f"In {target}, what was the hardest implementation decision you had to make, and what trade-offs shaped your final approach?",
+            evidence_text,
+        )
+    if category == "backend":
+        return (
+            f"For the backend or implementation layer of {target}, how did you structure the APIs, services, data flow, or modules so the system stayed reliable in day-to-day use?",
+            evidence_text,
+        )
+    if category == "debugging":
+        return (
+            f"Tell me about a debugging or production issue from {target} or similar recent work: what failed, how did you isolate the root cause, and what change prevented it from recurring?",
+            evidence_text,
+        )
     if category == "architecture":
-        if evidence_text:
-            return (
-                f"Using '{label}' as context, walk me through the architectural decisions you made. What trade-offs did you consider, and how would you adapt it for greater scale or reliability?",
-                evidence_text,
-            )
         return (
-            f"Suppose you had to design a system for this role that must scale rapidly and remain observable. What would your high-level approach be, and how would you validate its robustness?",
-            None,
+            f"If you had to redesign or scale {target} for higher load, more users, or stricter reliability requirements, what architecture or design changes would you make first and why?",
+            evidence_text,
         )
-
     if category == "leadership":
-        if evidence_text:
-            return (
-                f"Describe a moment in '{label}' where you influenced direction, built alignment, or drove delivery. What actions did you take, and what changed as a result?",
-                evidence_text,
-            )
         return (
-            f"Share an example where you led a team or initiative through ambiguity or change. How did you ensure success for the group?",
-            None,
+            f"Describe a situation from your recent work where you had to create alignment, make a delivery decision, or take ownership beyond coding. What did you do and what was the outcome?",
+            evidence_text,
         )
-
     hr_prompt = HR_QUESTIONS[index % len(HR_QUESTIONS)]
     return hr_prompt, evidence_text
 
@@ -520,43 +578,37 @@ def _question_text(category: str, candidate: dict[str, object], context: Planner
 def _difficulty_for(role_family: str, category: str) -> str:
     if category in {"architecture", "leadership"}:
         return "hard" if role_family in {"architect", "manager", "practice_head", "lead"} else "medium"
-    if role_family in {"senior_engineer", "architect", "lead"}:
+    if category in {"debugging", "backend", "deep_dive", "project"}:
         return "medium"
-    return "easy" if category == "behavioral" else "medium"
+    return "easy"
 
 
 
 def _reference_answer_for(category: str) -> str:
     if category == "architecture":
-        return (
-            "A strong answer should explain the architectural choices, trade-offs considered, how reliability and scalability were addressed, and how success was validated."
-        )
+        return "A strong answer should explain the design changes, trade-offs, scaling plan, and how reliability or observability would be validated."
+    if category == "debugging":
+        return "A strong answer should explain the failure signal, debugging steps, root cause, the fix, and how recurrence was prevented."
+    if category == "backend":
+        return "A strong answer should explain implementation structure, interfaces, data flow, operational concerns, and why that approach held up in practice."
     if category == "leadership":
-        return (
-            "A strong answer should describe the situation, actions taken to influence or align others, how obstacles were overcome, and the measurable impact on the team or project."
-        )
+        return "A strong answer should describe the situation, ownership taken, how alignment or delivery was handled, and the concrete result."
     if category == "project":
-        return (
-            "A strong answer should clearly state the problem, the candidate's specific ownership, the approach taken, decisions made, and how success or impact was measured."
-        )
+        return "A strong answer should clearly state the problem, the candidate's ownership, key decisions, execution details, and measurable impact."
     if category == "deep_dive":
-        return (
-            "A strong answer should detail the technical challenge, the reasoning behind key decisions, trade-offs, and how the outcome was validated."
-        )
-    if category == "behavioral":
-        return (
-            "A strong answer should describe the context, actions, and results, focusing on adaptability, learning, or collaboration."
-        )
-    return (
-        "A strong answer should explain the candidate's real contribution, decisions, trade-offs, execution details, validation approach, and outcomes."
-    )
+        return "A strong answer should focus on a concrete implementation choice, trade-offs, reasoning, and lessons learned."
+    return "A strong answer should explain the candidate's real contribution, decisions, execution details, validation approach, and outcomes."
+
 
 
 def _build_question(category: str, candidate: dict[str, object], context: PlannerContext, index: int) -> dict[str, object]:
     text, evidence_text = _question_text(category, candidate, context, index)
     skill_or_topic = str(candidate.get("label") or category)
+    normalized_category = "behavioral" if category == "behavioral" else category
+    public_category = "project" if category == "backend" else normalized_category
     metadata = {
-        "category": category,
+        "category": public_category,
+        "slot": category,
         "priority_source": str(candidate.get("priority_source") or "derived"),
         "skill_or_topic": skill_or_topic,
         "role_alignment": round(float(candidate.get("role_alignment") or 0.0), 3),
@@ -573,12 +625,12 @@ def _build_question(category: str, candidate: dict[str, object], context: Planne
     }
     return {
         "text": text,
-        "type": category if category != "behavioral" else "hr",
-        "category": category,
+        "type": "hr" if public_category == "behavioral" else public_category,
+        "category": public_category,
         "topic": skill_or_topic[:80],
         "intent": f"Assess {category.replace('_', ' ')} depth aligned to the {context.role_family} profile.",
-        "focus_skill": skill_or_topic if candidate.get("kind") == "skill" else None,
-        "project_name": skill_or_topic[:160] if candidate.get("kind") in {"project", "architecture", "leadership"} else None,
+        "focus_skill": None,
+        "project_name": skill_or_topic[:160] if public_category in {"project", "architecture", "leadership"} else None,
         "reference_answer": _reference_answer_for(category),
         "difficulty": _difficulty_for(context.role_family, category),
         "priority_source": metadata["priority_source"],
@@ -590,24 +642,34 @@ def _build_question(category: str, candidate: dict[str, object], context: Planne
 
 
 
-def _fallback_candidate(category: str, context: PlannerContext) -> dict[str, object]:
-    topic = {
-        "deep_dive": context.jd.required_skills[0] if context.jd.required_skills else "technical depth",
-        "project": context.resume.projects[0].text if context.resume.projects else "recent project",
-        "architecture": context.jd.title or "system design",
-        "leadership": context.resume.experiences[0].text if context.resume.experiences else "team ownership",
-        "behavioral": "behavioral",
-    }.get(category, "general")
-    return {
-        "kind": "skill" if category == "deep_dive" else "project",
-        "label": topic,
-        "priority_source": "fallback",
-        "score": 0.6,
-        "resume_alignment": 0.5,
-        "jd_alignment": 0.5,
-        "role_alignment": 0.6,
-        "evidence": [],
+def _first_six_words(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9']+", text.lower())[:6])
+
+
+
+def _has_duplicate_structure(questions: list[dict[str, object]]) -> bool:
+    similarity_seen: set[str] = set()
+    first_six_seen: set[str] = set()
+    opening_limits = {
+        "think back": 0,
+        "describe a situation": 0,
+        "choose a project": 0,
     }
+    for question in questions:
+        text = _clean(question.get("text"))
+        similarity = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", "", text.lower())).strip()
+        first_six = _first_six_words(text)
+        if similarity in similarity_seen or (first_six and first_six in first_six_seen):
+            return True
+        similarity_seen.add(similarity)
+        first_six_seen.add(first_six)
+        lowered = text.lower()
+        for prefix in opening_limits:
+            if lowered.startswith(prefix):
+                opening_limits[prefix] += 1
+                if opening_limits[prefix] > 1:
+                    return True
+    return False
 
 
 def build_question_context(
@@ -648,12 +710,20 @@ def build_question_plan(
     jd_skill_scores: Mapping[str, int] | None,
     question_count: int | None = None,
 ) -> dict[str, object]:
-    total_questions = max(2, min(20, int(question_count or 8)))
+    total_questions = max(6, min(9, int(question_count or 8)))
     resume = _extract_structured_resume(resume_text or "")
     jd = _extract_structured_jd(jd_title, jd_skill_scores)
     role_family, seniority = _infer_role_family(jd_title or jd.title, resume, jd)
-    distribution = _distribution_for_role(role_family, total_questions)
     topic_priorities = _make_topic_candidates(resume, jd, role_family)
+    distribution = {
+        "intro": 1,
+        "project": 1,
+        "deep_dive": 1,
+        "backend": 1,
+        "debugging": 1,
+        "architecture": 1,
+        "leadership": 1,
+    }
     context = PlannerContext(
         role_family=role_family,
         seniority=seniority,
@@ -664,43 +734,55 @@ def build_question_plan(
         distribution=distribution,
     )
 
-    questions: list[dict[str, object]] = [dict(INTRO_QUESTION)]
-    used_topics: set[tuple[str, str]] = set()
+    slot_order = ["intro", "project", "deep_dive", "backend", "debugging", "architecture", "leadership"]
+    if total_questions == 6:
+        slot_order = ["intro", "project", "backend", "debugging", "architecture", "leadership"]
+    elif total_questions == 8:
+        slot_order.append("project")
+    elif total_questions >= 9:
+        slot_order.extend(["project", "deep_dive"])
 
-    ordered_categories: list[str] = []
-    for category, count in distribution.items():
-        ordered_categories.extend([category] * count)
+    def _build_slot_set(active_slots: list[str], variant: int = 0) -> list[dict[str, object]]:
+        questions: list[dict[str, object]] = []
+        for index, slot in enumerate(active_slots, start=1):
+            candidate = _slot_candidate(slot, context)
+            if variant:
+                candidate = dict(candidate)
+                if slot in {"project", "deep_dive", "backend", "debugging", "architecture"}:
+                    candidate["label"] = get_resume_module(resume) if index % 2 == 0 else candidate.get("label")
+                if slot == "leadership" and variant > 1:
+                    candidate["label"] = "your recent work"
+            questions.append(_build_question(slot, candidate, context, index))
+        return questions
 
-    def _matches_category(candidate: dict[str, object], category: str) -> bool:
-        kind = str(candidate.get("kind") or "")
-        if category == "deep_dive":
-            return kind == "skill"
-        if category == "project":
-            return kind == "project"
-        return kind == category
+    final_questions = _build_slot_set(slot_order)
+    if _has_duplicate_structure(final_questions):
+        final_questions = _build_slot_set(slot_order, variant=1)
+    if _has_duplicate_structure(final_questions):
+        final_questions = _build_slot_set(slot_order, variant=2)
 
-    def _pick_candidate(category: str) -> dict[str, object]:
-        for candidate in topic_priorities:
-            topic_key = (category, _normalize_skill_token(str(candidate.get("label") or category)))
-            if topic_key in used_topics:
-                continue
-            if _matches_category(candidate, category):
-                used_topics.add(topic_key)
-                return candidate
-        fallback = _fallback_candidate(category, context)
-        used_topics.add((category, _normalize_skill_token(str(fallback.get("label") or category))))
-        return fallback
+    if _has_duplicate_structure(final_questions):
+        rewrites = {
+            1: "Walk me through the most concrete project or system you worked on recently: what problem did it solve and what did you own?",
+            2: "What implementation trade-off from your recent work best shows how you make engineering decisions under constraints?",
+            3: "How did you organize the backend, services, or data flow in your recent work so the system remained maintainable?",
+            4: "Describe a debugging issue you investigated recently: what symptoms appeared first, how did you narrow the cause, and what fixed it?",
+            5: "How would you redesign the system you know best to improve scale, reliability, or observability without overcomplicating it?",
+            6: "Tell me about a time you had to take ownership, align people, or push a delivery decision forward when things were unclear.",
+        }
+        for idx, text in rewrites.items():
+            if idx < len(final_questions):
+                final_questions[idx]["text"] = text
 
-    for index, category in enumerate(ordered_categories, start=1):
-        questions.append(_build_question(category, _pick_candidate(category), context, index))
-
-    final_questions = questions[:total_questions]
-    project_like_count = sum(
-        1 for item in final_questions if item.get("category") in {"deep_dive", "project", "architecture", "leadership"}
-    )
+    project_like_count = sum(1 for item in final_questions if item.get("category") in {"deep_dive", "project", "architecture", "leadership"})
     hr_count = sum(1 for item in final_questions if item.get("category") == "behavioral")
     intro_count = sum(1 for item in final_questions if item.get("category") == "intro")
     projects = [item.text for item in resume.projects[:6]]
+    structured_resume_meta = {
+        "projects": [item.text for item in resume.projects[:6]],
+        "experience": [item.text for item in resume.experiences[:6]],
+        "skills": list(resume.skills[:18]),
+    }
 
     return {
         "questions": final_questions,
@@ -722,8 +804,9 @@ def build_question_plan(
             "role_family": role_family,
             "seniority": seniority,
             "distribution": distribution,
-            "structured_resume": asdict(resume),
+            "structured_resume": structured_resume_meta,
             "structured_jd": asdict(jd),
             "topic_priorities": topic_priorities,
+            "resume_module": get_resume_module(resume),
         },
     }
