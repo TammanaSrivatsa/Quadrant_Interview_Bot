@@ -13,6 +13,7 @@ FIXES applied:
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 
@@ -38,9 +39,118 @@ router = APIRouter(prefix="/hr", tags=["hr"])
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+def _json_dict(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _json_list(value: object) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return []
+    return []
+
+
+def _safe_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _safe_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _normalize_answer_evaluation(value: object) -> dict:
+    raw = _json_dict(value)
+    breakdown = _json_dict(raw.get("score_breakdown"))
+    legacy_breakdown = _json_dict(raw.get("dimension_breakdown"))
+
+    relevance = _safe_float(raw.get("relevance"))
+    if relevance is None:
+        relevance = _safe_float(legacy_breakdown.get("relevance"))
+    if relevance is None:
+        relevance = _safe_float(breakdown.get("relevance"))
+
+    clarity = _safe_float(raw.get("clarity"))
+    if clarity is None:
+        clarity = _safe_float(legacy_breakdown.get("clarity"))
+    if clarity is None:
+        clarity = _safe_float(breakdown.get("clarity"))
+
+    completeness = _safe_float(raw.get("completeness"))
+    if completeness is None:
+        completeness = _safe_float(legacy_breakdown.get("completeness"))
+    if completeness is None:
+        completeness = _safe_float(breakdown.get("completeness"))
+
+    confidence = _safe_float(raw.get("confidence_communication"))
+    if confidence is None:
+        confidence = _safe_float(legacy_breakdown.get("confidence"))
+    if confidence is None:
+        confidence = _safe_float(breakdown.get("time_fit"))
+
+    technical = _safe_float(raw.get("technical_correctness"))
+    if technical is None:
+        technical = _safe_float(legacy_breakdown.get("correctness"))
+    if technical is None:
+        technical = relevance
+
+    overall = _safe_float(raw.get("overall_answer_score"))
+    if overall is None:
+        overall = _safe_float(raw.get("score"))
+    if overall is None:
+        overall = _safe_float(breakdown.get("overall_score"))
+
+    normalized_breakdown = breakdown or {
+        "relevance": relevance if relevance is not None else 0.0,
+        "completeness": completeness if completeness is not None else 0.0,
+        "clarity": clarity if clarity is not None else 0.0,
+        "time_fit": confidence if confidence is not None else 0.0,
+        "overall_score": overall if overall is not None else 0.0,
+        "word_count": _safe_int(raw.get("word_count")) or 0,
+    }
+
+    return {
+        **raw,
+        "relevance": relevance,
+        "technical_correctness": technical,
+        "clarity": clarity,
+        "confidence_communication": confidence,
+        "completeness": completeness,
+        "overall_answer_score": overall,
+        "strengths": raw.get("strengths") if isinstance(raw.get("strengths"), list) else [],
+        "weaknesses": raw.get("weaknesses") if isinstance(raw.get("weaknesses"), list) else [],
+        "improvement_suggestion": raw.get("improvement_suggestion") or raw.get("feedback") or "No answer evaluation available yet.",
+        "score_breakdown": normalized_breakdown,
+    }
+
+
 def _hr_review_from_result(result: Result) -> dict:
     """Read HR review data from the dedicated columns (new) or explanation JSON (legacy)."""
-    expl = result.explanation or {}
+    expl = _json_dict(result.explanation)
     return {
         # New dedicated columns take precedence; fall back to legacy JSON keys.
         "final_score":         result.hr_final_score         if result.hr_final_score         is not None else expl.get("hr_final_score"),
@@ -154,32 +264,47 @@ def interview_detail(
 
     # FIX: read HR review from dedicated columns (new) with JSON fallback (legacy)
     hr_review = _hr_review_from_result(result)
-    job_skills = (job.skill_scores or {}).keys() if job else ()
+    job_skills = _json_dict(job.skill_scores).keys() if job else ()
 
     questions_payload = []
     section_scores: dict[str, list[float]] = defaultdict(list)
     for q in sorted(session.questions, key=lambda item: item.id):
-        answer_text = q.answer_text if q.answer_text is not None else (
-            latest_answers[q.id].answer_text if q.id in latest_answers else None
+        latest_answer = latest_answers.get(q.id)
+        answer_text = q.answer_text if q.answer_text is not None else (latest_answer.answer_text if latest_answer else None)
+        time_taken_seconds = q.time_taken_seconds if q.time_taken_seconds is not None else (latest_answer.time_taken_sec if latest_answer else None)
+        stored_evaluation = _normalize_answer_evaluation(
+            latest_answer.evaluation_json if latest_answer and latest_answer.evaluation_json is not None else q.evaluation_json
         )
-        time_taken_seconds = q.time_taken_seconds if q.time_taken_seconds is not None else (
-            latest_answers[q.id].time_taken_sec if q.id in latest_answers else None
-        )
-        stored_evaluation = latest_answers[q.id].evaluation_json if q.id in latest_answers and isinstance(latest_answers[q.id].evaluation_json, dict) else None
-        score_breakdown = stored_evaluation.get("score_breakdown") if stored_evaluation else compute_answer_scorecard(
-            q.text,
-            answer_text or "",
-            allotted_seconds=int(q.allotted_seconds or 0),
-            time_taken_seconds=int(time_taken_seconds or 0),
-            jd_skills=job_skills,
-        )
-        ai_answer_score = float((stored_evaluation or {}).get("overall_answer_score") or q.relevance_score or score_breakdown["overall_score"])
+        score_breakdown = _json_dict(stored_evaluation.get("score_breakdown"))
+        if not score_breakdown:
+            score_breakdown = compute_answer_scorecard(
+                q.text,
+                answer_text or "",
+                allotted_seconds=int(q.allotted_seconds or 0),
+                time_taken_seconds=int(time_taken_seconds or 0),
+                jd_skills=job_skills,
+            )
+            stored_evaluation["score_breakdown"] = score_breakdown
+
+        ai_answer_score = _safe_float(stored_evaluation.get("overall_answer_score"))
+        if ai_answer_score is None:
+            ai_answer_score = _safe_float(q.llm_score)
+        if ai_answer_score is None:
+            ai_answer_score = _safe_float(q.relevance_score)
+        if ai_answer_score is None:
+            ai_answer_score = _safe_float(score_breakdown.get("overall_score")) or 0.0
+
+        section_name = str(q.question_type or q.topic or "project")
+        section_scores[section_name].append(ai_answer_score)
+
         questions_payload.append(
             {
                 "id": q.id,
                 "text": q.text,
                 "difficulty": q.difficulty,
                 "topic": q.topic,
+                "section": section_name,
+                "reference_answer": q.reference_answer,
                 "answer_text": answer_text,
                 "answer_summary": q.answer_summary,
                 "relevance_score": q.relevance_score,
@@ -187,10 +312,11 @@ def interview_detail(
                 "score_breakdown": score_breakdown,
                 "allotted_seconds": q.allotted_seconds,
                 "time_taken_seconds": time_taken_seconds,
-                "skipped": q.skipped or (latest_answers[q.id].skipped if q.id in latest_answers else False),
+                "skipped": q.skipped or (latest_answer.skipped if latest_answer else False),
                 "llm_score": q.llm_score,
                 "llm_feedback": q.llm_feedback,
-                "evaluation": stored_evaluation or {},
+                "feedback": q.llm_feedback or stored_evaluation.get("feedback"),
+                "evaluation": stored_evaluation,
             }
         )
 
@@ -199,23 +325,23 @@ def interview_detail(
         "interview": {
             "interview_id": session.id,
             "application_id": result.application_id,
-            "candidate": {"id": candidate.id, "name": candidate.name, "email": candidate.email},
+            "candidate": {"id": candidate.id if candidate else None, "name": candidate.name if candidate else None, "email": candidate.email if candidate else None},
             "job": {"id": job.id if job else None, "title": job.jd_title if job else None},
             "status": session.status,
             "stage": stage_payload(result.stage),
             "started_at": session.started_at,
             "ended_at": session.ended_at,
             "llm_eval_status": session.llm_eval_status or "pending",
-            "evaluation_summary": session.evaluation_summary_json or {},
+            "evaluation_summary": _json_dict(session.evaluation_summary_json),
         },
         "questions": questions_payload,
         "events": [
             {
                 "id": ev.id,
                 "event_type": ev.event_type,
-                "score": float(ev.score),
+                "score": _safe_float(ev.score),
                 "created_at": ev.created_at,
-                "meta_json": ev.meta_json or {},
+                "meta_json": _json_dict(ev.meta_json),
                 "image_url": f"/uploads/{ev.image_path}" if ev.image_path else None,
                 "suspicious": ev.event_type not in {"periodic", "baseline"},
             }
