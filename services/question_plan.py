@@ -462,52 +462,53 @@ def _question_text(category: str, candidate: dict[str, object], context: Planner
     skill = label if candidate.get("kind") == "skill" else None
     title = context.jd.title or context.title or "the role"
 
+    # Improved, less repetitive, more natural fallback wording
     if category == "deep_dive":
         if skill and evidence_text:
             return (
-                f"You’ve worked with {skill}. Tell me about the most relevant recent example where you used it, what problem you were solving, and the trade-offs you handled.",
+                f"Think back to a recent challenge where {skill} was essential. What was the scenario, what decisions did you face, and how did you navigate trade-offs?",
                 evidence_text,
             )
         if skill:
             return (
-                f"For this {title} role, walk me through a real task or feature where you used {skill} end to end. What decisions did you make and why?",
+                f"Describe a situation where your expertise in {skill} directly influenced the outcome. What complexities did you encounter, and how did you resolve them?",
                 None,
             )
         return (
-            f"Walk me through the most technically demanding implementation you have handled recently. What made it difficult, and how did you resolve it?",
+            f"Share a technically demanding problem you solved recently. What made it complex, and what was your approach to overcoming obstacles?",
             evidence_text,
         )
 
     if category == "project":
         if evidence_text:
             return (
-                f"In '{label}', what was the core objective, what exactly did you own, and how did you validate that your solution worked in practice?",
+                f"Choose a project from your experience—what problem were you addressing, what did you personally own, and how did you measure success?",
                 evidence_text,
             )
         return (
-            f"Tell me about the project or feature most relevant to this {title} role. What was your contribution and measurable impact?",
+            f"Tell me about a project where your contribution changed the outcome. What was your role, and how did you know it worked?",
             None,
         )
 
     if category == "architecture":
         if evidence_text:
             return (
-                f"Using '{label}' as context, explain the architecture or system-design choices involved. Why was that design appropriate, and what would you change at larger scale?",
+                f"Using '{label}' as context, walk me through the architectural decisions you made. What trade-offs did you consider, and how would you adapt it for greater scale or reliability?",
                 evidence_text,
             )
         return (
-            f"For a {title} role, describe how you would design a scalable, observable, and maintainable solution for a core business workflow.",
+            f"Suppose you had to design a system for this role that must scale rapidly and remain observable. What would your high-level approach be, and how would you validate its robustness?",
             None,
         )
 
     if category == "leadership":
         if evidence_text:
             return (
-                f"Tell me about a situation from '{label}' where you influenced direction, ownership, delivery, or stakeholders. What actions did you take and what changed because of you?",
+                f"Describe a moment in '{label}' where you influenced direction, built alignment, or drove delivery. What actions did you take, and what changed as a result?",
                 evidence_text,
             )
         return (
-            f"Describe a time you led execution, mentored others, or aligned stakeholders to deliver an important outcome.",
+            f"Share an example where you led a team or initiative through ambiguity or change. How did you ensure success for the group?",
             None,
         )
 
@@ -523,6 +524,32 @@ def _difficulty_for(role_family: str, category: str) -> str:
         return "medium"
     return "easy" if category == "behavioral" else "medium"
 
+
+
+def _reference_answer_for(category: str) -> str:
+    if category == "architecture":
+        return (
+            "A strong answer should explain the architectural choices, trade-offs considered, how reliability and scalability were addressed, and how success was validated."
+        )
+    if category == "leadership":
+        return (
+            "A strong answer should describe the situation, actions taken to influence or align others, how obstacles were overcome, and the measurable impact on the team or project."
+        )
+    if category == "project":
+        return (
+            "A strong answer should clearly state the problem, the candidate's specific ownership, the approach taken, decisions made, and how success or impact was measured."
+        )
+    if category == "deep_dive":
+        return (
+            "A strong answer should detail the technical challenge, the reasoning behind key decisions, trade-offs, and how the outcome was validated."
+        )
+    if category == "behavioral":
+        return (
+            "A strong answer should describe the context, actions, and results, focusing on adaptability, learning, or collaboration."
+        )
+    return (
+        "A strong answer should explain the candidate's real contribution, decisions, trade-offs, execution details, validation approach, and outcomes."
+    )
 
 
 def _build_question(category: str, candidate: dict[str, object], context: PlannerContext, index: int) -> dict[str, object]:
@@ -552,7 +579,7 @@ def _build_question(category: str, candidate: dict[str, object], context: Planne
         "intent": f"Assess {category.replace('_', ' ')} depth aligned to the {context.role_family} profile.",
         "focus_skill": skill_or_topic if candidate.get("kind") == "skill" else None,
         "project_name": skill_or_topic[:160] if candidate.get("kind") in {"project", "architecture", "leadership"} else None,
-        "reference_answer": "A strong answer should be evidence-backed, explain decisions and trade-offs, and clearly describe the candidate's personal contribution and outcomes.",
+        "reference_answer": _reference_answer_for(category),
         "difficulty": _difficulty_for(context.role_family, category),
         "priority_source": metadata["priority_source"],
         "role_alignment": metadata["role_alignment"],
@@ -583,6 +610,36 @@ def _fallback_candidate(category: str, context: PlannerContext) -> dict[str, obj
     }
 
 
+def build_question_context(
+    *,
+    resume_text: str,
+    jd_title: str | None,
+    jd_skill_scores: Mapping[str, int] | None,
+    question_count: int | None = None,
+) -> dict[str, object]:
+    resume = _extract_structured_resume(resume_text or "")
+    jd = _extract_structured_jd(jd_title, jd_skill_scores)
+    role_family, seniority = _infer_role_family(jd_title or jd.title, resume, jd)
+    distribution = _distribution_for_role(role_family, max(2, min(20, int(question_count or 8))))
+    topic_priorities = _make_topic_candidates(resume, jd, role_family)
+
+    return {
+        "role_title": _clean(jd_title or jd.title),
+        "role_family": role_family,
+        "seniority": seniority,
+        "distribution": distribution,
+        "jd_core_skills": jd.required_skills[:8],
+        "jd_keywords": jd.keywords[:12],
+        "resume_summary": resume.summary,
+        "resume_projects": [item.text for item in resume.projects[:6]],
+        "resume_recent_experience": [item.text for item in resume.experiences[:6]],
+        "resume_skills": resume.skills[:12],
+        "resume_certifications": resume.certifications[:5],
+        "resume_leadership_signal": resume.leadership_signal,
+        "resume_architecture_signal": resume.architecture_signal,
+        "topic_priorities": topic_priorities[:10],
+    }
+
 
 def build_question_plan(
     *,
@@ -608,57 +665,60 @@ def build_question_plan(
     )
 
     questions: list[dict[str, object]] = [dict(INTRO_QUESTION)]
-    used_labels: set[str] = set()
-    pool = list(topic_priorities)
+    used_topics: set[tuple[str, str]] = set()
 
+    ordered_categories: list[str] = []
     for category, count in distribution.items():
-        created = 0
-        for candidate in pool:
-            label_key = f"{category}:{_normalize_skill_token(str(candidate.get('label') or ''))}"
-            if label_key in used_labels:
-                continue
-            if category == "architecture" and candidate.get("kind") not in {"architecture", "project", "skill"}:
-                continue
-            if category == "leadership" and candidate.get("kind") not in {"leadership", "project"}:
-                continue
-            if category == "project" and candidate.get("kind") not in {"project", "skill"}:
-                continue
-            if category == "deep_dive" and candidate.get("kind") not in {"skill", "project"}:
-                continue
-            if category == "behavioral" and candidate.get("kind") not in {"project", "leadership", "skill", "architecture"}:
-                continue
+        ordered_categories.extend([category] * count)
 
-            questions.append(_build_question(category, candidate, context, created))
-            used_labels.add(label_key)
-            created += 1
-            if created >= count:
-                break
-        while created < count:
-            fallback = _fallback_candidate(category, context)
-            questions.append(_build_question(category, fallback, context, created))
-            created += 1
+    def _matches_category(candidate: dict[str, object], category: str) -> bool:
+        kind = str(candidate.get("kind") or "")
+        if category == "deep_dive":
+            return kind == "skill"
+        if category == "project":
+            return kind == "project"
+        return kind == category
 
-    questions = questions[:total_questions]
-    project_like_count = sum(1 for item in questions if item.get("category") in {"deep_dive", "project", "architecture", "leadership"})
-    hr_count = sum(1 for item in questions if item.get("category") == "behavioral")
+    def _pick_candidate(category: str) -> dict[str, object]:
+        for candidate in topic_priorities:
+            topic_key = (category, _normalize_skill_token(str(candidate.get("label") or category)))
+            if topic_key in used_topics:
+                continue
+            if _matches_category(candidate, category):
+                used_topics.add(topic_key)
+                return candidate
+        fallback = _fallback_candidate(category, context)
+        used_topics.add((category, _normalize_skill_token(str(fallback.get("label") or category))))
+        return fallback
+
+    for index, category in enumerate(ordered_categories, start=1):
+        questions.append(_build_question(category, _pick_candidate(category), context, index))
+
+    final_questions = questions[:total_questions]
+    project_like_count = sum(
+        1 for item in final_questions if item.get("category") in {"deep_dive", "project", "architecture", "leadership"}
+    )
+    hr_count = sum(1 for item in final_questions if item.get("category") == "behavioral")
+    intro_count = sum(1 for item in final_questions if item.get("category") == "intro")
+    projects = [item.text for item in resume.projects[:6]]
 
     return {
-        "questions": questions,
-        "total_questions": len(questions),
+        "questions": final_questions,
+        "total_questions": len(final_questions),
         "project_count": project_like_count,
         "hr_count": hr_count,
         "project_questions_count": project_like_count,
         "theory_questions_count": hr_count,
-        "intro_count": 1,
-        "projects": [item.text for item in resume.projects[:6]],
+        "intro_count": intro_count,
+        "projects": projects,
         "meta": {
-            "total_questions": len(questions),
+            "total_questions": len(final_questions),
             "project_count": project_like_count,
             "hr_count": hr_count,
             "project_questions_count": project_like_count,
             "theory_questions_count": hr_count,
-            "intro_count": 1,
-            "projects": [item.text for item in resume.projects[:6]],
+            "intro_count": intro_count,
+            "projects": projects,
             "role_family": role_family,
             "seniority": seniority,
             "distribution": distribution,

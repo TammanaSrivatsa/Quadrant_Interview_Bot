@@ -28,17 +28,22 @@ Hard rules:
 - Return ONLY valid JSON.
 - Questions must be grounded in the candidate's actual resume projects, recent work, leadership experience, or measurable impact.
 - Prioritize JD core skills only when they are supported by the resume OR central to the role.
+- At least 50% of the questions should be grounded in named resume projects, recent role achievements, or measurable outcomes when that evidence is available.
 - Ask about actual resume projects before asking generic skill questions.
+- Prefer referencing measurable outcomes when available, such as performance improvement, scale, latency, throughput, cost reduction, adoption, or accuracy/recall/precision impact.
 - If a question is project-related, it must include either a project name or a concrete metric, scale, latency, users, throughput, percentage, cost, or impact signal.
 - For each strong project or major role achievement, aim to cover execution, decision/trade-off, and debugging/failure angles across the set.
 - At least one question must explore failure, debugging, trade-offs, or something that did not work.
+- Preferred question mix: 1 intro, 3-4 project deep dives where possible, 1 system design or architecture question, 1 debugging/failure/trade-off question, and 1 leadership/stakeholder/behavioral question only when role seniority requires it.
 - Match role family and seniority:
   - Engineer -> implementation, debugging, APIs, project execution
   - Architect -> system design, trade-offs, scalability, governance
   - Lead/Head/Manager -> strategy, stakeholder alignment, delivery quality, practice/team building
+- For architect, lead, head, manager, or practice profiles, include architecture trade-offs, governance/scalability, stakeholder alignment, and delivery/practice-building depth. Avoid junior-level phrasing.
 - For senior roles, include leadership, stakeholder, and scaling questions.
 - Use natural, human interviewer phrasing.
-- Prefer specific prompts like 'Walk me through...', 'How did you decide...', 'What trade-offs did you consider...', 'Tell me about a time...'
+- Questions should feel analytical, reflective, scenario-based, and role-appropriate.
+- Prefer specific prompts like 'Walk me through...', 'How did you decide...', 'What trade-offs did you consider...', 'Tell me about a time...', but do not repeat one opening style too often.
 - Avoid generic phrasing like 'used X end to end' or 'most relevant project'.
 - Reject weak language such as 'what is your experience with' or 'explain what is'.
 - Avoid duplicate question patterns, and do not start more than two questions with the same opening pattern.
@@ -275,11 +280,13 @@ def build_structured_question_input(
         jd_title=jd_title,
         jd_skill_scores=jd_skill_scores or {},
         question_count=8,
-    )
-    planner_meta = planner_bundle.get("meta") or {}
+    ) or {}
+    planner_meta = planner_bundle.get("meta") if isinstance(planner_bundle, dict) else {}
+    if planner_meta is None:
+        planner_meta = {}
     parsed_resume = parse_resume_text(resume_text or "")
-    structured_resume = planner_meta.get("structured_resume") or {}
-    structured_jd = planner_meta.get("structured_jd") or {}
+    structured_resume = planner_meta["structured_resume"] if isinstance(planner_meta, dict) and "structured_resume" in planner_meta else {}
+    structured_jd = planner_meta["structured_jd"] if isinstance(planner_meta, dict) and "structured_jd" in planner_meta else {}
 
     resume_skills = _augment_resume_skills(parsed_resume, resume_text or "", jd_skill_scores)
     if not resume_skills:
@@ -335,11 +342,14 @@ def _llm_user_prompt(structured_input: StructuredQuestionInput, question_count: 
         "Treat resume_recent_roles, resume_projects, resume_project_technologies, and resume_measurable_impact as the strongest evidence.",
         "The first question should be a concise intro/background opener.",
         "The remaining questions must mostly be project, implementation, architecture, leadership, or high-signal JD-depth questions.",
+        "At least 50% of the questions should be grounded in named projects, recent achievements, or measurable outcomes when available.",
         "At least one question must be explicitly grounded in a named project or recent role achievement.",
         "Every project-related question must include a project name or a measurable metric/scale detail.",
         "Across the set, strong projects should be explored from execution, decision/trade-off, and debugging/failure angles.",
         "At least one question must explore failure, debugging, trade-offs, or something that did not work.",
-        "Prefer concrete resume evidence over generic skills.",
+        "Prefer concrete resume evidence and measurable outcomes over generic skills.",
+        "Prefer analytical, reflective, and scenario-based phrasing with natural variety.",
+        "Use no more than two questions with the same opening pattern.",
         "Include at most one JD gap-probe question, only for a critical missing skill.",
         "Reference answers should describe what a strong answer should cover, not a memorized script.",
         "Do not use weak phrasing such as 'end to end', 'most relevant project', 'what is your experience with', or 'explain what is'.",
@@ -728,17 +738,19 @@ def generate_llm_questions(
     first_attempt = _call_llm(structured_input, max(2, int(question_count)))
     first_issues = _validate_question_set(first_attempt["questions"], structured_input, max(2, int(question_count)))
 
+    all_issues = list(first_issues)
+
     final_questions = first_attempt["questions"]
     final_user_prompt = first_attempt["user_prompt"]
     retry_used = False
     retry_issues: list[str] = []
 
-    if first_issues:
+    if all_issues:
         retry_used = True
         stricter_note = (
             "Your previous output lacked depth and grounding. Regenerate using project-specific details and measurable outcomes. "
             "Quality failures: "
-            + ", ".join(first_issues)
+            + ", ".join(all_issues)
             + ". Enforce: no duplicates, no weak phrases, every project-related question must include a project name or metric anchor, include project execution + trade-off + debugging/failure coverage, leadership and stakeholder plus scaling coverage for senior profiles, architecture/trade-off coverage for architect roles, and keep behavioral questions limited."
         )
         retry_attempt = _call_llm(structured_input, max(2, int(question_count)), retry_note=stricter_note)
@@ -749,7 +761,7 @@ def generate_llm_questions(
         else:
             raise ValueError(
                 "LLM question quality failed after retry: first="
-                + ",".join(first_issues)
+                + ",".join(all_issues)
                 + " retry="
                 + ",".join(retry_issues)
             )
@@ -761,7 +773,7 @@ def generate_llm_questions(
         "user_prompt": final_user_prompt,
         "llm_model": _llm_model(),
         "quality": {
-            "first_attempt_issues": first_issues,
+            "first_attempt_issues": all_issues,
             "retry_used": retry_used,
             "retry_issues": retry_issues,
         },
@@ -783,7 +795,7 @@ def generate_question_bundle_with_fallback(
         jd_title=jd_title,
         jd_skill_scores=jd_skill_scores or {},
         question_count=desired_count,
-    )
+    ) or {}
     try:
         llm_bundle = generate_llm_questions(
             jd_text=_build_jd_text(jd_title, jd_skill_scores, jd_text=jd_text),
@@ -793,7 +805,11 @@ def generate_question_bundle_with_fallback(
             jd_skill_scores=jd_skill_scores or {},
         )
         questions = llm_bundle["questions"]
-        project_like_count = sum(1 for item in questions if item.get("category") in {"deep_dive", "project", "architecture", "leadership"})
+        project_like_count = sum(
+            1
+            for item in questions
+            if item.get("category") in {"deep_dive", "project", "architecture", "leadership"}
+        )
         hr_count = sum(1 for item in questions if item.get("category") == "behavioral")
         return {
             "questions": questions,
@@ -818,7 +834,13 @@ def generate_question_bundle_with_fallback(
         }
     except Exception as exc:
         logger.warning("LLM question generation failed, using deterministic fallback: %s", exc)
-        meta = dict(fallback_bundle.get("meta") or {})
+        fallback_bundle = fallback_bundle or {}
+        questions = []
+        if isinstance(fallback_bundle, dict):
+            questions = fallback_bundle.get("questions")
+            if questions is None:
+                questions = []
+        meta = dict((fallback_bundle.get("meta") or {}) if isinstance(fallback_bundle, dict) else {})
         meta.update(
             {
                 "generation_mode": "fallback_dynamic_plan",
@@ -835,5 +857,14 @@ def generate_question_bundle_with_fallback(
                 ),
             }
         )
-        fallback_bundle["meta"] = meta
-        return fallback_bundle
+        return {
+            "questions": questions,
+            "total_questions": len(questions),
+            "project_count": fallback_bundle.get("project_count", 0) if isinstance(fallback_bundle, dict) else 0,
+            "hr_count": fallback_bundle.get("hr_count", 0) if isinstance(fallback_bundle, dict) else 0,
+            "project_questions_count": fallback_bundle.get("project_questions_count", 0) if isinstance(fallback_bundle, dict) else 0,
+            "theory_questions_count": fallback_bundle.get("theory_questions_count", 0) if isinstance(fallback_bundle, dict) else 0,
+            "intro_count": fallback_bundle.get("intro_count", 0) if isinstance(fallback_bundle, dict) else 0,
+            "projects": fallback_bundle.get("projects", []) if isinstance(fallback_bundle, dict) else [],
+            "meta": meta,
+        }
