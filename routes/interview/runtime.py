@@ -387,6 +387,42 @@ def _create_next_question(
     return None
 
 
+def _is_stale_question_bank(questions: list[dict[str, object]]) -> tuple[bool, str]:
+    if not questions:
+        return False, "empty"
+
+    texts = [str(item.get("text") or "").strip() for item in questions if str(item.get("text") or "").strip()]
+    lowered = [text.lower() for text in texts]
+    first_six: set[str] = set()
+    duplicate_prefix = False
+    for text in lowered:
+        prefix = " ".join(text.split()[:6]).strip()
+        if prefix and prefix in first_six:
+            duplicate_prefix = True
+            break
+        if prefix:
+            first_six.add(prefix)
+
+    has_debugging = any(any(token in text for token in ("debug", "root cause", "bottleneck", "what failed", "what went wrong")) for text in lowered)
+    has_design = any(any(token in text for token in ("scale", "redesign", "architecture", "trade-off", "tradeoff", "reliability", "observability")) for text in lowered)
+    has_legacy_pattern = any(
+        "think back to a recent challenge where" in text
+        or "your expertise in" in text
+        or "used x end to end" in text
+        for text in lowered
+    )
+
+    if has_legacy_pattern:
+        return True, "legacy_pattern"
+    if duplicate_prefix:
+        return True, "duplicate_prefix"
+    if not has_debugging:
+        return True, "missing_debugging"
+    if not has_design:
+        return True, "missing_design"
+    return False, "ok"
+
+
 def _ensure_question_bank(
     db: Session,
     *,
@@ -396,7 +432,14 @@ def _ensure_question_bank(
     question_count: int,
 ) -> list[dict[str, object]]:
     questions = normalize_result_questions(result.interview_questions)
-    if questions and len(questions) >= int(question_count or 0 or 8):
+    stale, stale_reason = _is_stale_question_bank(questions)
+    if questions and len(questions) >= int(question_count or 0 or 8) and not stale:
+        logger.info(
+            "interview_question_bank_loaded_existing result_id=%s candidate_id=%s questions=%s source=result.interview_questions generation_mode=stored_existing",
+            result.id,
+            candidate.id,
+            len(questions),
+        )
         return questions
 
     # If a question bank exists but is too small (e.g., older runs, partial saves,
@@ -407,6 +450,14 @@ def _ensure_question_bank(
             result.id,
             len(questions),
             int(question_count or 8),
+        )
+    elif questions and stale:
+        logger.info(
+            "interview_question_bank_regenerate_stale_bank result_id=%s candidate_id=%s existing=%s reason=%s",
+            result.id,
+            candidate.id,
+            len(questions),
+            stale_reason,
         )
     if not candidate.resume_path:
         raise HTTPException(status_code=400, detail="Resume is required before interview questions can be prepared.")
@@ -426,6 +477,8 @@ def _ensure_question_bank(
         question_count=int(question_count or 8),
         project_ratio=project_ratio,
     )
+    generation_mode = str(((bundle.get("meta") or {}).get("generation_mode") or "unknown"))
+    fallback_used = bool((bundle.get("meta") or {}).get("fallback_used"))
     questions = normalize_result_questions(bundle.get("questions") or [])
     if not questions:
         raise HTTPException(status_code=400, detail="Interview questions could not be generated for this result yet.")
@@ -434,7 +487,15 @@ def _ensure_question_bank(
     db.add(result)
     db.commit()
     db.refresh(result)
-    logger.info("interview_question_bank_generate_success result_id=%s questions=%s", result.id, len(questions))
+    logger.info(
+        "interview_question_bank_generated_fresh result_id=%s candidate_id=%s questions=%s source=%s generation_mode=%s fallback_used=%s",
+        result.id,
+        candidate.id,
+        len(questions),
+        generation_mode,
+        generation_mode,
+        fallback_used,
+    )
     return questions
 
 

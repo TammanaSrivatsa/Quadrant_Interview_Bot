@@ -6,6 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.llm_answer_generator import generate_answer
+from services.llm.client import _get_client, _llm_model, _llm_provider, _resolve_llm_config
 from services.llm_question_generator import (
     LLM_QUESTION_SYSTEM_PROMPT,
     build_structured_question_input,
@@ -415,6 +416,24 @@ def test_generate_llm_questions_retries_on_missing_debugging_and_design(monkeypa
     assert result["quality"]["retry_used"] is True
     assert any("missing_failure_debugging_tradeoff_question" == issue for issue in result["quality"]["first_attempt_issues"])
     assert any(q["category"] == "architecture" for q in result["questions"])
+
+
+def test_llm_client_prefers_groq_key_and_model(monkeypatch):
+    _resolve_llm_config.cache_clear()
+    _get_client.cache_clear()
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test_key")
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+    client = _get_client()
+
+    assert client is not None
+    assert _llm_provider() == "groq"
+    assert _llm_model() == "llama-3.3-70b-versatile"
+
+    _resolve_llm_config.cache_clear()
+    _get_client.cache_clear()
 
 
 def test_generate_answer_returns_candidate_style_text(monkeypatch):

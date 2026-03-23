@@ -8,7 +8,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 
-from services.llm.client import _clean_json, _get_client, _llm_model
+from services.llm.client import _clean_json, _get_client, _llm_model, _llm_provider
 from services.question_plan import build_question_plan
 from services.resume_parser import parse_resume_text
 
@@ -728,15 +728,30 @@ def _normalize_llm_questions(
 
 def _call_llm(structured_input: StructuredQuestionInput, question_count: int, retry_note: str | None = None) -> dict[str, object]:
     user_prompt = _llm_user_prompt(structured_input, question_count, retry_note=retry_note)
-    response = _get_client().chat.completions.create(
-        model=_llm_model(),
-        messages=[
-            {"role": "system", "content": LLM_QUESTION_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.25 if retry_note else 0.35,
-        max_tokens=2400,
+    provider = _llm_provider()
+    model = _llm_model()
+    logger.info(
+        "llm_question_request provider=%s model=%s question_count=%s retry=%s role_family=%s",
+        provider,
+        model,
+        question_count,
+        bool(retry_note),
+        structured_input.role_family,
     )
+    try:
+        response = _get_client().chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": LLM_QUESTION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.25 if retry_note else 0.35,
+            max_tokens=2400,
+        )
+        logger.info("llm_question_request_success provider=%s model=%s retry=%s", provider, model, bool(retry_note))
+    except Exception as exc:
+        logger.warning("llm_question_request_failure provider=%s model=%s retry=%s error=%s", provider, model, bool(retry_note), exc)
+        raise
     payload = _extract_json_object(response.choices[0].message.content or "")
     questions = _normalize_llm_questions(
         raw_questions=list(payload.get("questions") or []),
@@ -839,6 +854,14 @@ def generate_question_bundle_with_fallback(
             if item.get("category") in {"deep_dive", "project", "architecture", "leadership"}
         )
         hr_count = sum(1 for item in questions if item.get("category") == "behavioral")
+        logger.info(
+            "llm_question_bundle_ready provider=%s model=%s generation_mode=%s fallback_used=%s questions=%s",
+            _llm_provider(),
+            llm_bundle.get("llm_model"),
+            "llm_primary",
+            False,
+            len(questions),
+        )
         return {
             "questions": questions,
             "total_questions": len(questions),
@@ -884,6 +907,14 @@ def generate_question_bundle_with_fallback(
                     )
                 ),
             }
+        )
+        logger.info(
+            "llm_question_bundle_ready provider=%s model=%s generation_mode=%s fallback_used=%s questions=%s",
+            _llm_provider(),
+            _llm_model(),
+            "fallback_dynamic_plan",
+            True,
+            len(questions),
         )
         return {
             "questions": questions,

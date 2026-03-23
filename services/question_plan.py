@@ -70,6 +70,8 @@ ARCHITECTURE_TERMS = {
     "architecture", "scalable", "distributed", "microservices", "event-driven", "system design", "availability", "latency", "kafka", "cloud", "aws", "azure", "gcp",
 }
 RECENCY_TERMS = {"current", "present", "recent", "latest", "ongoing", "now"}
+EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+NAMEY_HEADER_PATTERN = re.compile(r"^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$")
 
 
 @dataclass
@@ -480,8 +482,46 @@ def get_resume_module(resume: StructuredResume) -> str:
 
 
 
-def _clean_label(value: str | None, fallback: str) -> str:
+def _sanitize_evidence_text(value: str | None) -> str:
     cleaned = _clean(value)
+    if not cleaned:
+        return ""
+    cleaned = EMAIL_PATTERN.sub("", cleaned)
+    cleaned = re.sub(r"\b(?:phone|mobile|email|gmail|contact|linkedin)\b.*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b\+?\d[\d\s().-]{7,}\b", "", cleaned)
+    cleaned = re.sub(r"\b[A-Z]{2,}(?:\s+[A-Z]{2,})+\b", "", cleaned)
+    cleaned = re.sub(r"[^A-Za-z0-9+#./,%()\-\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -|,")
+    if NAMEY_HEADER_PATTERN.match(cleaned) and len(cleaned.split()) <= 3:
+        return ""
+    return cleaned
+
+
+def _evidence_label(value: str | None, fallback: str) -> str:
+    cleaned = _sanitize_evidence_text(value)
+    if not cleaned:
+        return fallback
+    lowered = cleaned.lower()
+    mapping = [
+        (("veriton",), "Veriton data platform"),
+        (("frontend", "ui"), "frontend UI system"),
+        (("design", "system"), "frontend UI system"),
+        (("dashboard",), "frontend UI system"),
+        (("backend", "api"), "backend API system"),
+        (("api",), "backend API system"),
+        (("lakehouse",), "data platform"),
+        (("databricks",), "data platform"),
+        (("pipeline",), "data pipeline"),
+        (("resume", "screen"), "resume screening system"),
+    ]
+    for keywords, label in mapping:
+        if all(keyword in lowered for keyword in keywords):
+            return label
+    return cleaned
+
+
+def _clean_label(value: str | None, fallback: str) -> str:
+    cleaned = _evidence_label(value, fallback)
     if not cleaned:
         return fallback
     cleaned = re.sub(r"^[\-•*\d.\)\(\s]+", "", cleaned)
@@ -494,10 +534,33 @@ def _clean_label(value: str | None, fallback: str) -> str:
 
 
 
+def _role_track(context: PlannerContext) -> str:
+    blob = " ".join([
+        context.role_family,
+        context.seniority,
+        context.title,
+        context.jd.title,
+        " ".join(context.jd.required_skills),
+        context.resume.summary,
+        " ".join(item.text for item in (context.resume.projects[:4] + context.resume.experiences[:4])),
+    ]).lower()
+    normalized = f" {re.sub(r'[^a-z0-9+#./]+', ' ', blob)} "
+
+    def _has(term: str) -> bool:
+        return f" {term} " in normalized
+
+    if any(_has(term) for term in ("frontend", "react", "javascript", "typescript", "ui", "ux", "css", "angular", "vue")) or " design system " in normalized:
+        return "frontend"
+    if any(_has(term) for term in ("aiml", "ml", "nlp", "llm", "databricks", "lakehouse", "spark", "pipeline", "warehouse")) or " machine learning " in normalized or " data engineer " in normalized:
+        return "data"
+    return "backend"
+
+
 def _slot_candidate(category: str, context: PlannerContext) -> dict[str, object]:
     module_label = get_resume_module(context.resume)
     prioritized = list(context.topic_priorities or [])
     evidence_pool = context.resume.projects + context.resume.experiences
+    role_track = _role_track(context)
 
     def _fallback(label: str, evidence: list[EvidenceItem] | None = None, *, kind: str = "project") -> dict[str, object]:
         return {
@@ -533,6 +596,13 @@ def _slot_candidate(category: str, context: PlannerContext) -> dict[str, object]
         ),
         None,
     )
+    frontend_item = next(
+        (
+            item for item in evidence_pool
+            if any(term in item.text.lower() for term in ("frontend", "ui", "react", "component", "design system", "state", "responsive", "browser", "dashboard"))
+        ),
+        None,
+    )
     debug_item = next(
         (
             item for item in evidence_pool
@@ -558,14 +628,16 @@ def _slot_candidate(category: str, context: PlannerContext) -> dict[str, object]
     if category == "project":
         return _pick("project") or _fallback(_clean_label(project_item.text if project_item else module_label, module_label), [project_item] if project_item else [])
     if category == "deep_dive":
+        preferred_item = frontend_item if role_track == "frontend" and frontend_item else project_item
         return (
             _pick(predicate=lambda item: str(item.get("kind")) in {"project", "skill"} and item.get("evidence"))
-            or _fallback(_clean_label(project_item.text if project_item else module_label, module_label), [project_item] if project_item else [])
+            or _fallback(_clean_label(preferred_item.text if preferred_item else module_label, module_label), [preferred_item] if preferred_item else [])
         )
     if category == "backend":
+        chosen = frontend_item if role_track == "frontend" and frontend_item else backend_item
         return (
-            _pick(predicate=lambda item: any(ev for ev in (item.get("evidence") or []) if any(term in ev.text.lower() for term in ("api", "service", "backend", "pipeline", "database", "integration"))))
-            or _fallback(_clean_label(backend_item.text if backend_item else project_item.text if project_item else module_label, module_label), [backend_item] if backend_item else ([project_item] if project_item else []))
+            _pick(predicate=lambda item: any(ev for ev in (item.get("evidence") or []) if any(term in ev.text.lower() for term in ("api", "service", "backend", "pipeline", "database", "integration", "ui", "component", "state", "browser", "responsive"))))
+            or _fallback(_clean_label(chosen.text if chosen else project_item.text if project_item else module_label, module_label), [chosen] if chosen else ([project_item] if project_item else []))
         )
     if category == "debugging":
         return (
@@ -590,9 +662,10 @@ def _slot_candidate(category: str, context: PlannerContext) -> dict[str, object]
 def _question_text(category: str, candidate: dict[str, object], context: PlannerContext, index: int) -> tuple[str, str | None]:
     label = _clean_label(str(candidate.get("label") or ""), get_resume_module(context.resume))
     evidence = _pick_evidence(candidate, category, context.role_family)
-    evidence_text = evidence.text if evidence else None
+    evidence_text = _sanitize_evidence_text(evidence.text if evidence else None) or None
     role_label = _clean(context.jd.title or context.title or "this role")
     module_label = get_resume_module(context.resume)
+    role_track = _role_track(context)
     target = label or module_label or "system"
 
     if category == "intro":
@@ -606,21 +679,41 @@ def _question_text(category: str, candidate: dict[str, object], context: Planner
             evidence_text,
         )
     if category == "deep_dive":
+        if role_track == "frontend":
+            return (
+                f"In {target}, how did you break down the UI into components, state boundaries, or reusable patterns, and what trade-offs shaped that structure?",
+                evidence_text,
+            )
         return (
             f"Thinking about {target}, which implementation choice or trade-off best shows how you make technical decisions under real constraints, and why did you choose that path?",
             evidence_text,
         )
     if category == "backend":
+        if role_track == "frontend":
+            return (
+                f"For {target}, how did you handle responsiveness, cross-browser behavior, and API or state integration so the user experience stayed stable as the UI grew?",
+                evidence_text,
+            )
         return (
             f"In {target}, how did you structure the APIs, services, integrations, or data flow so the system stayed maintainable and reliable as real usage increased?",
             evidence_text,
         )
     if category == "debugging":
+        if role_track == "frontend":
+            return (
+                f"Describe a tricky UI, API-integration, or state bug from {target}: what symptoms showed up first, how did you narrow the issue, and what change made the experience stable again?",
+                evidence_text,
+            )
         return (
             f"Describe a failure, debugging issue, or production problem from {target}: what signals told you something was wrong, how did you isolate the root cause, and what changed afterward?",
             evidence_text,
         )
     if category == "architecture":
+        if role_track == "frontend":
+            return (
+                f"If {target} had to support more features, heavier usage, or faster releases, how would you evolve the frontend architecture, performance strategy, and collaboration model without hurting UX?",
+                evidence_text,
+            )
         return (
             f"If {target} had to handle more scale, tighter reliability targets, or broader integration requirements, what design or architecture changes would you make first and what trade-offs would you watch?",
             evidence_text,

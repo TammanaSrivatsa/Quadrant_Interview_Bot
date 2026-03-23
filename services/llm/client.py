@@ -1,33 +1,82 @@
-"""Groq-backed helpers used by JD upload and interview evaluation."""
+"""LLM client helpers used by interview generation and evaluation."""
 from __future__ import annotations
 
 import json
 import logging
 import os
 import re
+from functools import lru_cache
 
 from groq import Groq
 
 logger = logging.getLogger(__name__)
-_client: Groq | None = None
 
-
-def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        api_key = os.getenv("GROQ_API_KEY", "")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not set in .env")
-        _client = Groq(api_key=api_key)
-    return _client
-
-
-def _llm_model() -> str:
-    return os.getenv("GROQ_LLM_MODEL", "llama-3.1-8b-instant")
+_DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 def _clean_json(raw: str) -> str:
     return re.sub(r"```(?:json)?", "", raw or "").strip().strip("`")
+
+
+@lru_cache(maxsize=1)
+def _resolve_llm_config() -> dict[str, str]:
+    groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    openai_like_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+
+    if not provider:
+        if groq_key.startswith("gsk_"):
+            provider = "groq"
+        elif openai_like_key:
+            provider = "openai"
+        else:
+            provider = "groq"
+
+    if provider == "groq" and not groq_key and openai_like_key.startswith("gsk_"):
+        groq_key = openai_like_key
+        logger.warning("llm_config_groq_key_loaded_from_openai_api_key")
+
+    model = (
+        os.getenv("LLM_MODEL")
+        or os.getenv("GROQ_MODEL")
+        or os.getenv("MODEL_NAME")
+        or _DEFAULT_GROQ_MODEL
+    ).strip()
+
+    return {
+        "provider": provider,
+        "api_key": groq_key if provider == "groq" else openai_like_key,
+        "model": model,
+    }
+
+
+@lru_cache(maxsize=1)
+def _get_client() -> Groq:
+    config = _resolve_llm_config()
+    provider = config["provider"]
+    api_key = config["api_key"]
+
+    if provider != "groq":
+        raise RuntimeError(
+            f"Unsupported LLM_PROVIDER='{provider}'. This runtime is configured for Groq chat completions. "
+            "Set LLM_PROVIDER=groq and provide GROQ_API_KEY (or OPENAI_API_KEY containing a gsk_ key)."
+        )
+    if not api_key:
+        raise RuntimeError(
+            "Missing Groq API key. Set GROQ_API_KEY to a valid gsk_ key. "
+            "OPENAI_API_KEY is only accepted here as a compatibility fallback when it contains the same gsk_ key."
+        )
+
+    logger.info("llm_client_init provider=%s model=%s", provider, config["model"])
+    return Groq(api_key=api_key)
+
+
+def _llm_provider() -> str:
+    return _resolve_llm_config()["provider"]
+
+
+def _llm_model() -> str:
+    return _resolve_llm_config()["model"]
 
 
 def extract_skills(jd_text: str) -> dict[str, int]:
@@ -48,7 +97,7 @@ def extract_skills(jd_text: str) -> dict[str, int]:
         data = json.loads(_clean_json(response.choices[0].message.content or ""))
         return {str(k).strip().lower(): max(1, min(10, int(v))) for k, v in data.items() if str(k).strip()}
     except Exception as exc:
-        logger.error("extract_skills failed: %s", exc)
+        logger.error("extract_skills_failed provider=%s model=%s error=%s", _llm_provider(), _llm_model(), exc)
         return {}
 
 
