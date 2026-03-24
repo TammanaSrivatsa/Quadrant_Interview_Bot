@@ -149,6 +149,8 @@ class PlannerContext:
     distribution: dict[str, int]
 
 
+# Parsing helpers -----------------------------------------------------------
+
 def _clean(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
@@ -195,6 +197,8 @@ def _infer_years_band(text: str) -> str:
             return "2-4"
     return "0-2"
 
+
+# Evidence helpers ----------------------------------------------------------
 
 def _sanitize_evidence_text(value: str | None) -> str:
     cleaned = _clean(value)
@@ -390,6 +394,8 @@ def _extract_structured_jd(jd_title: str | None, jd_skill_scores: Mapping[str, i
     )
 
 
+# Role routing helpers ------------------------------------------------------
+
 def _infer_role_family(title: str, resume: StructuredResume, jd: StructuredJD) -> tuple[str, str]:
     combined = " ".join([
         title or "",
@@ -575,6 +581,8 @@ def _pick_evidence(candidate: dict[str, object], category: str, role_family: str
         evidence.sort(key=lambda item: (_evidence_priority(item), item.strength), reverse=True)
     return evidence[0]
 
+
+# Fallback slot generation --------------------------------------------------
 
 def _slot_candidate(category: str, context: PlannerContext, occurrence: int = 1) -> dict[str, object]:
     role_track = _role_track(context)
@@ -827,6 +835,8 @@ def _build_question(category: str, candidate: dict[str, object], context: Planne
     }
 
 
+# Validation helpers --------------------------------------------------------
+
 def _first_six_words(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9']+", text.lower())[:6])
 
@@ -874,23 +884,10 @@ def build_question_context(*, resume_text: str, jd_title: str | None, jd_skill_s
     }
 
 
-def build_question_plan(*, resume_text: str, jd_title: str | None, jd_skill_scores: Mapping[str, int] | None, question_count: int | None = None) -> dict[str, object]:
-    total_questions = max(6, min(9, int(question_count or 8)))
-    resume = _extract_structured_resume(resume_text or "")
-    jd = _extract_structured_jd(jd_title, jd_skill_scores)
-    role_family, seniority = _infer_role_family(jd_title or jd.title, resume, jd)
-    topic_priorities = _make_topic_candidates(resume, jd, role_family)
-    context = PlannerContext(
-        role_family=role_family,
-        seniority=seniority,
-        title=_clean(jd_title or jd.title),
-        resume=resume,
-        jd=jd,
-        topic_priorities=topic_priorities,
-        distribution=_distribution_for_role(role_family, total_questions),
-    )
-
+def _slot_order_for_context(context: PlannerContext, total_questions: int) -> list[str]:
+    role_family = context.role_family
     role_track = _role_track(context)
+
     if role_family == "architect":
         slot_order = ["intro", "project", "architecture", "deep_dive", "debugging", "architecture", "leadership"]
     elif role_family in {"manager", "practice_head"}:
@@ -918,6 +915,28 @@ def build_question_plan(*, resume_text: str, jd_title: str | None, jd_skill_scor
             slot_order.append("project")
         else:
             slot_order.append("deep_dive")
+    return slot_order[:total_questions]
+
+
+
+def build_question_plan(*, resume_text: str, jd_title: str | None, jd_skill_scores: Mapping[str, int] | None, question_count: int | None = None) -> dict[str, object]:
+    total_questions = max(6, min(9, int(question_count or 8)))
+    resume = _extract_structured_resume(resume_text or "")
+    jd = _extract_structured_jd(jd_title, jd_skill_scores)
+    role_family, seniority = _infer_role_family(jd_title or jd.title, resume, jd)
+    topic_priorities = _make_topic_candidates(resume, jd, role_family)
+    context = PlannerContext(
+        role_family=role_family,
+        seniority=seniority,
+        title=_clean(jd_title or jd.title),
+        resume=resume,
+        jd=jd,
+        topic_priorities=topic_priorities,
+        distribution=_distribution_for_role(role_family, total_questions),
+    )
+
+    role_track = _role_track(context)
+    slot_order = _slot_order_for_context(context, total_questions)
 
     category_counts: dict[str, int] = {}
     questions: list[dict[str, object]] = []

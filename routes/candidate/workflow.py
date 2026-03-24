@@ -32,9 +32,8 @@ from utils.email_service import send_interview_email
 router = APIRouter()
 
 
-# KEEP: Result.interview_questions remains the result-level source of truth.
-# DISABLE: the older duplicate helper `_persist_result_question_bank` has been removed.
-# REPLACE: this single helper now uses the shared planner via services.question_generation.
+# Result.interview_questions remains the stored question-bank source of truth.
+# Generation flows through the shared facade in services.question_generation.
 def _generate_result_question_bank(
     *,
     result: Result,

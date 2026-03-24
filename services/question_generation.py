@@ -1,8 +1,9 @@
-"""Thin service wrapper around the interview question generator.
+"""Public question-generation entrypoint.
 
-This module is imported by interview runtime routes. It must not be a stub,
-otherwise interviews can fail when a question bank needs to be generated
-on-demand.
+Runtime-facing callers should come through this module so the active question
+flow stays easy to trace:
+
+runtime/browser -> question_generation -> llm_question_generator -> question_plan fallback
 """
 
 from __future__ import annotations

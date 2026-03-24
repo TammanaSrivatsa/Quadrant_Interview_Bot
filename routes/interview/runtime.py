@@ -1,15 +1,4 @@
-"""
-routes/interview/runtime.py — Interview + timed session + OpenCV proctoring.
-
-FIXES in this file:
-  I3: interview_transcribe now returns graceful empty response instead of HTTP 500
-      when Groq STT is unavailable. Candidate sees a soft warning and can type answer.
-
-Original fixes also present:
-  1. PAUSE_ON_WARNINGS_ENABLED reads from env var PROCTOR_PAUSE_ENABLED
-  2. Baseline re-capture prevented on reconnect
-  3. llm_eval_status set to "pending" when session completes
-"""
+"""Interview runtime routes: question-bank loading, persistence, timed flow, and proctoring."""
 from __future__ import annotations
 
 import json
@@ -23,11 +12,7 @@ from ai_engine.phase1.matching import extract_text_from_file
 from fastapi.responses import RedirectResponse
 from services.question_generation import build_question_bundle
 from sqlalchemy.orm import Session
-from ai_engine.phase3.question_flow import (
-    compute_dynamic_seconds,
-    next_question_payload,
-    normalize_result_questions,
-)
+from ai_engine.phase3.question_flow import compute_dynamic_seconds, normalize_result_questions
 from database import get_db
 from models import (
     Candidate,
