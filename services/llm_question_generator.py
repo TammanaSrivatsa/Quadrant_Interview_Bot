@@ -861,35 +861,37 @@ def _generate_validated_llm_questions(
 ) -> tuple[list[dict[str, object]], str, dict[str, object]]:
     requested_count = max(2, int(question_count))
     first_attempt = _call_llm(structured_input, requested_count)
-    first_issues = _validate_question_set(first_attempt["questions"], structured_input, requested_count)
+    all_issues = _validate_question_set(first_attempt["questions"], structured_input, requested_count)
 
     final_questions = first_attempt["questions"]
     final_user_prompt = first_attempt["user_prompt"]
     retry_used = False
     retry_issues: list[str] = []
 
-    if first_issues:
+    if all_issues:
         retry_used = True
-        retry_attempt = _call_llm(
-            structured_input,
-            requested_count,
-            retry_note=_retry_note_for_issues(first_issues),
-        )
+        stricter_note = _retry_note_for_issues(all_issues)
+        retry_attempt = _call_llm(structured_input, requested_count, retry_note=stricter_note)
         retry_issues = _validate_question_set(retry_attempt["questions"], structured_input, requested_count)
-        if retry_issues:
+
+        # Use retry if it is at least as good as first attempt — never discard LLM output
+        retry_q = retry_attempt["questions"]
+        if retry_q and (not final_questions or len(retry_issues) <= len(all_issues)):
+            final_questions = retry_q
+            final_user_prompt = retry_attempt["user_prompt"]
+
+        # Only hard-fail when both attempts produced literally zero questions
+        if not final_questions:
             raise ValueError(
-                "LLM question quality failed after retry: first="
-                + ",".join(first_issues)
-                + " retry="
-                + ",".join(retry_issues)
+                "LLM returned zero questions after two attempts. first_issues="
+                + ",".join(all_issues)
             )
-        final_questions = retry_attempt["questions"]
-        final_user_prompt = retry_attempt["user_prompt"]
 
     quality = {
-        "first_attempt_issues": list(first_issues),
+        "first_attempt_issues": all_issues,
         "retry_used": retry_used,
         "retry_issues": retry_issues,
+        "final_issues": retry_issues if retry_used else all_issues,
     }
     return final_questions, final_user_prompt, quality
 
