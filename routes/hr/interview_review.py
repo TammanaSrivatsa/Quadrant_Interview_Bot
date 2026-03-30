@@ -270,10 +270,22 @@ def interview_detail(
 
     questions_payload = []
     section_scores: dict[str, list[float]] = defaultdict(list)
-    for q in sorted(session.questions, key=lambda item: item.id):
+    
+    # Sort and filter: Only show questions that were actually presented, answered, or skipped.
+    # This prevents the full 8-20 question bank from cluttering the review if the interview ended early.
+    target_questions = sorted(session.questions, key=lambda item: item.id)
+    
+    for q in target_questions:
         latest_answer = latest_answers.get(q.id)
         answer_text = q.answer_text if q.answer_text is not None else (latest_answer.answer_text if latest_answer else None)
         time_taken_seconds = q.time_taken_seconds if q.time_taken_seconds is not None else (latest_answer.time_taken_sec if latest_answer else None)
+        skipped = q.skipped or (latest_answer.skipped if latest_answer else False)
+        
+        # A question is "asked" if it was served (started_at), answered, or explicitly skipped.
+        is_asked = bool(q.started_at or answer_text or skipped or (time_taken_seconds and time_taken_seconds > 0))
+        if not is_asked:
+            continue
+
         stored_evaluation = _normalize_answer_evaluation(
             latest_answer.evaluation_json if latest_answer and latest_answer.evaluation_json is not None else q.evaluation_json
         )
@@ -314,7 +326,7 @@ def interview_detail(
                 "score_breakdown": score_breakdown,
                 "allotted_seconds": q.allotted_seconds,
                 "time_taken_seconds": time_taken_seconds,
-                "skipped": q.skipped or (latest_answer.skipped if latest_answer else False),
+                "skipped": skipped,
                 "llm_score": q.llm_score,
                 "llm_feedback": q.llm_feedback,
                 "feedback": q.llm_feedback or stored_evaluation.get("feedback"),
@@ -418,6 +430,28 @@ def finalize_interview(
         changed_by_user_id=current_user.user_id,
         note=payload.notes,
     )
+
+    # ── Automated Correspondence ─────────────────────────────────────────────
+    # Trigger Selection or Rejection emails based on the HR decision.
+    from utils.email_service import send_selection_email, send_rejection_email
+    from fastapi import BackgroundTasks
+    
+    candidate = session.candidate
+    job_title = job.jd_title if job else "Software Engineer"
+    
+    if payload.decision.lower() == "selected":
+        # Using a simple function wrapper for direct background task compatibility if needed, 
+        # but the client-side call here is synchronous within this FastAPI route context.
+        # For a truly non-blocking UI, move these to background_tasks.
+        try:
+            send_selection_email(candidate.email, candidate.name, job_title)
+        except Exception as e:
+            logger.error("Failed to send selection email: %s", e)
+    elif payload.decision.lower() == "rejected":
+        try:
+            send_rejection_email(candidate.email, candidate.name, job_title)
+        except Exception as e:
+            logger.error("Failed to send rejection email: %s", e)
 
     db.commit()
     return {

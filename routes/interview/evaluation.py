@@ -1,6 +1,7 @@
 """Post-interview answer evaluation with structured metadata."""
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import defaultdict
@@ -12,7 +13,7 @@ from ai_engine.phase1.scoring import compute_answer_scorecard
 from database import get_db, SessionLocal
 from models import InterviewAnswer, InterviewQuestion, InterviewSession
 from routes.dependencies import SessionUser, require_role
-from services.llm.client import evaluate_answer_detailed
+from services.llm.client import _clean_json, _get_client, _llm_model, _llm_provider
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["interview-evaluation"])
@@ -86,6 +87,116 @@ def _fallback_evaluation(question: InterviewQuestion, answer_text: str) -> dict[
         }
 
 
+def _batch_llm_evaluate(questions: list[InterviewQuestion]) -> dict[int, dict[str, object]]:
+    """
+    Evaluate all answered questions in a SINGLE LLM call to minimize API usage.
+    Returns a mapping of question.id -> evaluation dict.
+    Falls back to local scoring if the LLM call fails.
+    """
+    answerable = [
+        q for q in questions
+        if (q.answer_text or "").strip() and not q.skipped
+    ]
+    if not answerable:
+        return {}
+
+    # Build a compact batch prompt — one LLM call for all answers.
+    items_text = ""
+    for i, q in enumerate(answerable):
+        items_text += (
+            f'\n  {{"id": {q.id}, "question": {json.dumps((q.text or "")[:300])}, '
+            f'"answer": {json.dumps((q.answer_text or "")[:600])}, '
+            f'"section": {json.dumps(q.question_type or "project")}, '
+            f'"focus_skill": {json.dumps(q.focus_skill or "")}, '
+            f'"reference_hint": {json.dumps((q.reference_answer or "")[:300])}}}'
+        )
+        if i < len(answerable) - 1:
+            items_text += ","
+
+    prompt = f"""You are a senior technical interviewer performing a CRITICAL AUDIT of candidate answers.
+Your goal is to identify technically incorrect, hallucinated, or superficial answers. 
+
+Rules for Scoring:
+1. TECHNICAL AUDIT: If an answer contains technically incorrect facts (e.g. "Python was built by Microsoft" or "A primary key can have duplicates"), you MUST assign a score below 40 regardless of how confident the candidate sounds.
+2. RELEVANCE: Ensure the answer directly addresses the specific technical challenge in the question.
+3. CONCISENESS: One concise sentence for feedback (max 80 chars).
+
+Return ONLY a valid JSON object with this shape:
+{{
+  "evaluations": [
+    {{
+      "id": <id>,
+      "score": <0-100>,
+      "feedback": "<concise feedback>",
+      "strengths": ["<short strength>"],
+      "weaknesses": ["<short weakness>"],
+      "dimension_breakdown": {{"relevance": <0-100>, "correctness": <0-100>, "completeness": <0-100>, "clarity": <0-100>, "confidence": <0-100>}}
+    }}
+  ]
+}}
+
+Answers to audit:
+[{items_text}
+]"""
+
+    try:
+        response = _get_client().chat.completions.create(
+            model=_llm_model(),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.05,
+            max_tokens=2000,
+        )
+        raw = _clean_json(response.choices[0].message.content or "")
+        import re
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            raw = match.group(0)
+        data = json.loads(raw)
+        evals_list = data.get("evaluations") or []
+
+        result: dict[int, dict[str, object]] = {}
+        for ev in evals_list:
+            if not isinstance(ev, dict):
+                continue
+            qid = ev.get("id")
+            if not isinstance(qid, int):
+                try:
+                    qid = int(qid)
+                except Exception:
+                    continue
+            dims = ev.get("dimension_breakdown") or {}
+            if not isinstance(dims, dict):
+                dims = {}
+            clean_dims = {k: max(0, min(100, int(dims.get(k, 50)))) for k in ["relevance", "correctness", "completeness", "clarity", "confidence"]}
+            score_raw = ev.get("score", 50)
+            try:
+                score_val = float(score_raw)
+            except Exception:
+                score_val = 50.0
+            strengths = [str(x) for x in (ev.get("strengths") or [])[:3]]
+            weaknesses = [str(x) for x in (ev.get("weaknesses") or [])[:3]]
+            # Find matching question for reference
+            q_obj = next((q for q in answerable if q.id == qid), None)
+            result[qid] = {
+                "question": q_obj.text if q_obj else "",
+                "candidate_answer": q_obj.answer_text if q_obj else "",
+                "generated_reference_answer": q_obj.reference_answer if q_obj else "",
+                "score": max(0.0, min(100.0, score_val)),
+                "feedback": str(ev.get("feedback") or "Evaluation completed."),
+                "strengths": strengths,
+                "weaknesses": weaknesses,
+                "section": q_obj.question_type if q_obj else "project",
+                "dimension_breakdown": clean_dims,
+            }
+        logger.info("batch_llm_evaluate_success provider=%s model=%s questions=%s evaluated=%s",
+                    _llm_provider(), _llm_model(), len(answerable), len(result))
+        return result
+    except Exception as exc:
+        logger.warning("batch_llm_evaluate_failed provider=%s model=%s error=%s — using local fallback",
+                       _llm_provider(), _llm_model(), exc)
+        return {}
+
+
 def _upsert_llm_fields(db: Session, session_id: int, question: InterviewQuestion, evaluation: dict[str, object]) -> None:
     answer = (
         db.query(InterviewAnswer)
@@ -106,7 +217,7 @@ def _upsert_llm_fields(db: Session, session_id: int, question: InterviewQuestion
 
 
 def run_evaluation_task(session_id: int) -> None:
-    """Background task to evaluate interview answers."""
+    """Background task to evaluate interview answers using a single batched LLM call."""
     db = SessionLocal()
     try:
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
@@ -130,10 +241,13 @@ def run_evaluation_task(session_id: int) -> None:
         total_score = 0.0
         section_scores: dict[str, list[float]] = defaultdict(list)
 
+        # ONE batched LLM call for all answered questions (saves N-1 API requests vs per-question).
+        llm_results = _batch_llm_evaluate(questions)
+
         for question in questions:
             answer_text = (question.answer_text or "").strip()
             if not answer_text or question.skipped:
-                evaluation = {
+                evaluation: dict[str, object] = {
                     "question": question.text,
                     "candidate_answer": answer_text,
                     "generated_reference_answer": question.reference_answer or "A strong answer should directly respond to the prompt with practical detail.",
@@ -147,9 +261,8 @@ def run_evaluation_task(session_id: int) -> None:
                 _upsert_llm_fields(db, session_id, question, evaluation)
                 continue
 
-            # Quota Optimization: Skip LLM evaluate_answer_detailed to save 8-10 requests per interview.
-            # Using local deterministic fallback instead.
-            evaluation = _fallback_evaluation(question, answer_text)
+            # Use LLM result if available, otherwise fall back to local scoring.
+            evaluation = llm_results.get(question.id) or _fallback_evaluation(question, answer_text)
 
             _upsert_llm_fields(db, session_id, question, evaluation)
             total_score += float(evaluation["score"])
@@ -187,7 +300,7 @@ def evaluate_interview(
     db.commit()
 
     if rows_updated == 0:
-        # Another thread (like the background task) already took the lock. 
+        # Another thread (like the background task) already took the lock.
         # Wait for it to finish so the frontend spinner stays active.
         db.refresh(session)
         for _ in range(30):
@@ -202,10 +315,13 @@ def evaluate_interview(
     total_score = 0.0
     section_scores: dict[str, list[float]] = defaultdict(list)
 
+    # ONE batched LLM call for all questions (1 API request per interview, not N).
+    llm_results = _batch_llm_evaluate(questions)
+
     for question in questions:
         answer_text = (question.answer_text or "").strip()
         if not answer_text or question.skipped:
-            evaluation = {
+            evaluation: dict[str, object] = {
                 "question": question.text,
                 "candidate_answer": answer_text,
                 "generated_reference_answer": question.reference_answer or "A strong answer should directly respond to the prompt with practical detail.",
@@ -219,8 +335,8 @@ def evaluate_interview(
             _upsert_llm_fields(db, session_id, question, evaluation)
             continue
 
-        # Quota Optimization: Skip LLM evaluate_answer_detailed for local test mode.
-        evaluation = _fallback_evaluation(question, answer_text)
+        # Use LLM result if available, otherwise fall back to local scoring.
+        evaluation = llm_results.get(question.id) or _fallback_evaluation(question, answer_text)
 
         _upsert_llm_fields(db, session_id, question, evaluation)
         total_score += float(evaluation["score"])

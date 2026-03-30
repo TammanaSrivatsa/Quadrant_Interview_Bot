@@ -16,9 +16,49 @@ from services.resume_parser import parse_resume_text
 
 logger = logging.getLogger(__name__)
 
+# Pattern to detect pure date-range strings that should never be used as project names
+_DATE_RANGE_STR_RE = re.compile(
+    r"""(?:^|\s)
+    (?:
+        (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+           jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)
+        [\s,]+\d{4}
+    |\d{4}
+    )
+    \s*(?:–|-|to|/)\s*
+    (?:
+        (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+           jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)
+        [\s,]+\d{4}
+    |\d{4}
+    |present|current|now|ongoing
+    )(?:\s|$)""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _is_date_range_string(text: str | None) -> bool:
+    """Return True if the text is primarily a date range with no substantive content."""
+    cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not cleaned:
+        return False
+    # Strip the date range part and see if anything meaningful remains
+    stripped = _DATE_RANGE_STR_RE.sub("", cleaned).strip(" ,-|")
+    # If almost nothing is left after removing the date range, it's date-only
+    return len(stripped) < 6
+
+
 LLM_QUESTION_SYSTEM_PROMPT = """You are a highly experienced technical interviewer conducting a live panel interview.
 Your ONLY source material is the candidate's resume and the job description provided in the user message.
 You must generate questions that are IMPOSSIBLE to answer without knowing this specific candidate's resume.
+
+██████ CRITICAL — SINGLE QUESTION RULE (VIOLATIONS CAUSE REJECTION) ██████
+- Each "text" field MUST contain EXACTLY ONE question mark. No more.
+- NEVER combine two questions into one text: do NOT use patterns like "X? Also, Y?" or "A? And how did you B?"
+- Do NOT add sub-questions, follow-ups, or clarifications inside the question text.
+- Each question must be ONE focused, self-contained sentence ending with a single "?".
+- If you write two questions in one text field, the entire output is INVALID.
+██████████████████████████████████████████████████████████████████████████
 
 ABSOLUTE RULES:
 - Every question except the intro MUST reference a SPECIFIC project, technology, company, outcome, or achievement that appears in this candidate's resume.
@@ -29,12 +69,12 @@ ABSOLUTE RULES:
 
 Flow to follow:
 1. Intro: Let the candidate connect their background to this specific role.
-2. Project Deep Dive: Pick the strongest/most recent project from the resume and probe execution details.
-3. Implementation Trade-off: Ask about a key technical decision within one of their listed projects/roles.
-4. Architecture/Design: Ask how one of their actual systems would need to evolve if requirements changed.
-5. Debugging/Failure: Ask about a real failure, bug, or setback named in or implied by their resume.
-6. Scaling/Performance: Ask about a scaling challenge tied to their actual project or platform.
-7. Behavioral (only 1): Ask about leadership, conflict resolution, or stakeholder alignment.
+2. Project Deep Dive: Pick the strongest/most recent project from the resume and probe ONE execution detail.
+3. Implementation Trade-off: Ask about ONE key technical decision within one of their listed projects/roles.
+4. Architecture/Design: Ask how ONE of their actual systems would need to evolve if requirements changed.
+5. Debugging/Failure: Ask about ONE real failure, bug, or setback named in or implied by their resume.
+6. Scaling/Performance: Ask about ONE scaling challenge tied to their actual project or platform.
+7. Behavioral (only 1): Ask about ONE instance of leadership, conflict resolution, or stakeholder alignment.
 
 Role-family routing rules:
 - frontend -> components, state, UX, API integration, browser behavior; avoid data-platform questions
@@ -49,12 +89,13 @@ Hard rules:
 - Never use vague phrases: "your most relevant project", "end to end", "what is your experience with", "explain what is", "tell me about yourself".
 - Every question text should be specific enough that an interviewer could follow up based on the answer.
 - At minimum: 1 architecture/design, 1 debugging/failure, 1 performance/scaling, 1 intro, 1 behavioral.
+- REMINDER: Every question text must contain exactly ONE question mark and be a single sentence.
 
 Return a JSON object with this exact shape:
 {
   "questions": [
     {
-      "text": "string — must contain a specific project/platform/achievement from the resume",
+      "text": "string — ONE question, ONE question mark, specific project/platform/achievement from resume",
       "category": "intro|deep_dive|project|architecture|leadership|behavioral",
       "focus_skill": "string or null",
       "project_name": "string — the actual project or platform name, or null for intro/behavioral",
@@ -186,12 +227,18 @@ def _augment_resume_skills(parsed_resume: dict[str, Any], resume_text: str, jd_s
 
 def _augment_resume_projects(parsed_resume: dict[str, Any], resume_text: str) -> list[str]:
     projects = [str(item) for item in (parsed_resume.get("projects") or [])]
-    return _dedupe_strings(projects + _extract_inline_section_values(resume_text, "projects"), limit=10)
+    all_projects = projects + _extract_inline_section_values(resume_text, "projects")
+    # Remove any entry that is purely a date range (e.g. "Jan 2026 – Present")
+    filtered = [p for p in all_projects if not _is_date_range_string(p)]
+    return _dedupe_strings(filtered, limit=10)
 
 
 def _augment_resume_experiences(parsed_resume: dict[str, Any], resume_text: str) -> list[str]:
     experience = [str(item) for item in (parsed_resume.get("experience") or [])]
-    return _dedupe_strings(experience + _extract_inline_section_values(resume_text, "experience"), limit=10)
+    all_exp = experience + _extract_inline_section_values(resume_text, "experience")
+    # Remove pure date-range lines (e.g. "Jan 2026 – Present")
+    filtered = [e for e in all_exp if not _is_date_range_string(e)]
+    return _dedupe_strings(filtered, limit=10)
 
 
 def _augment_certifications(parsed_resume: dict[str, Any], resume_text: str) -> list[str]:
@@ -410,6 +457,7 @@ def _llm_user_prompt(structured_input: StructuredQuestionInput, question_count: 
 
     instructions = [
         f"Generate exactly {question_count} interview questions for this specific candidate.",
+        "SINGLE QUESTION RULE (HIGHEST PRIORITY): Each question text must contain EXACTLY ONE question mark. NEVER combine two questions like 'X? Also Y?' or 'A? And how did you B?'. Each text is ONE sentence, ONE question mark.",
         "CRITICAL: Your questions must be so specific to THIS resume that they could not be asked of any other candidate.",
         f"Use the EVIDENCE SNAPSHOT below — reference the actual project names, numbers, and role titles in your question text.",
         "80% of questions must directly reference a named project, platform, role, or measurable outcome from the resume.",
@@ -425,6 +473,8 @@ def _llm_user_prompt(structured_input: StructuredQuestionInput, question_count: 
         "Include at most 1 JD-gap question (skill in JD but missing from resume) — only if it's critical.",
         "Reference answers must specifically describe what a strong answer covers for THIS question, not a generic script.",
         "BANNED phrases: 'end to end', 'most relevant project', 'what is your experience with', 'explain what is', 'walk me through your resume', 'tell me about yourself'.",
+        "DATE RANGE BAN: NEVER use a date range (e.g. 'Jan 2026 – Present', '2024-2025', 'Q1 2026', 'recent months') as a project name or project reference. A project name must be a real product/platform/tool name like 'Interview Bot', 'Databricks Lakehouse', 'React dashboard', etc.",
+        "FINAL CHECK before outputting: count question marks in each text field. Reject and rewrite any text with more than 1 question mark.",
     ]
     role_track = _structured_role_track(structured_input)
     if role_track == "frontend":
@@ -743,6 +793,10 @@ def _normalize_llm_questions(
         category_hint = _normalize_category(item.get("category"), text)
         if not text or len(text) < 18 or ("?" not in text and category_hint not in {"behavioral", "leadership"}) or _contains_weak_phrase(text):
             continue
+        # Reject compound / multi-part questions (more than one ? in the text).
+        if text.count("?") > 1:
+            logger.warning("compound_question_rejected text=%r", text[:120])
+            continue
 
         category = category_hint
         similarity = _similarity_key(text)
@@ -750,7 +804,12 @@ def _normalize_llm_questions(
             continue
 
         focus_skill = _clean(item.get("focus_skill")) or None
-        project_name = _clean(item.get("project_name")) or None
+        raw_project_name = _clean(item.get("project_name")) or None
+        # Clear project_name if it's a date range (e.g. "Jan 2026 – Present") — never a valid project name
+        if raw_project_name and _is_date_range_string(raw_project_name):
+            logger.warning("date_range_project_name_cleared value=%r", raw_project_name)
+            raw_project_name = None
+        project_name = raw_project_name
         reference_answer = _clean(item.get("reference_answer"))
         if len(reference_answer) < 24:
             reference_answer = "A strong answer should explain the candidate's real contribution, decisions, trade-offs, execution details, validation approach, and outcomes."

@@ -8,6 +8,27 @@ from collections import OrderedDict
 from ai_engine.phase1.matching import extract_text_from_file
 from ai_engine.phase1.scoring import SKILL_ALIASES
 
+# Reject lines that are purely employment date ranges (e.g. "Jan 2026 – Present", "2022 - 2023")
+_DATE_RANGE_LINE_RE = re.compile(
+    r"""^\s*
+    (?:
+        (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+           jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)
+        [\s,]+\d{4}
+    |\d{4}
+    )
+    \s*(?:–|-|to|/)
+    \s*
+    (?:
+        (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+           jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)
+        [\s,]+\d{4}
+    |\d{4}
+    |present|current|now|ongoing
+    )\s*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
 SECTION_HEADERS = (
     "summary",
     "experience",
@@ -167,6 +188,9 @@ def parse_resume_text(text: str) -> dict[str, object]:
             exp_title = None
             continue
         if in_exp_section:
+            # Skip pure date-range lines (e.g. "Jan 2026 – Present", "2024 - 2025")
+            if _DATE_RANGE_LINE_RE.match(l):
+                continue
             # Experience title: role/company | ...
             if re.match(r"^[A-Za-z0-9\- &|()]+\|.*$", l) or (len(l) < 80 and not l.startswith("•") and not l.startswith("-") and not l.startswith("*")):
                 exp_title = l

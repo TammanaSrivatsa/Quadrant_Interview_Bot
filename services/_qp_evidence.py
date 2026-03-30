@@ -5,6 +5,26 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import asdict
 
+# Date-range pattern: catches "Jan 2026 – Present", "March 2024 - Dec 2025", "2022 – 2023", etc.
+_DATE_RANGE_RE = re.compile(
+    r"""^\s*
+    (?:
+        (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+           jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)
+        [\s,]+\d{4}
+    |\d{4}
+    )
+    \s*(?:–|-|to)\s*
+    (?:
+        (?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|
+           jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)
+        [\s,]+\d{4}
+    |\d{4}
+    |present|current|now|ongoing
+    )\s*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
 from services._qp_structs import (
     _ALL_CAPS_NAME_RE,
     _CITY_LOCATION_RE,
@@ -78,6 +98,9 @@ def _infer_years_band(text: str) -> str:
 def _sanitize_evidence_text(value: str | None) -> str:
     cleaned = _clean(value)
     if not cleaned:
+        return ""
+    # Reject pure date ranges early: "Jan 2026 – Present", "2022 - 2023", etc.
+    if _DATE_RANGE_RE.match(cleaned):
         return ""
     cleaned = EMAIL_PATTERN.sub("", cleaned)
     cleaned = PHONE_PATTERN.sub("", cleaned)
