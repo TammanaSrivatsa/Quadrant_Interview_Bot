@@ -265,15 +265,3 @@ class InterviewFeedback(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("InterviewSession")
-
-class InterviewFeedback(Base):
-    """Candidate experience feedback collected at the end of the session."""
-    __tablename__ = "interview_feedbacks"
-
-    id = Column(Integer, primary_key=True)
-    session_id = Column(Integer, ForeignKey("interview_sessions.id"))
-    rating = Column(Integer, nullable=False)  # 1-5 stars
-    comment = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    session = relationship("InterviewSession")

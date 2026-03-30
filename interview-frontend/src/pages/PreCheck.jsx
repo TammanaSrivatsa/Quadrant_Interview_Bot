@@ -273,7 +273,7 @@ export default function PreCheck() {
           )}
 
           <div className="space-y-4">
-            {Object.entries(checks).map(([key, check]) => (
+            {Object.entries(checks).map(([key, check], idx) => (
               <div key={key} className={cn(
                 "flex items-center justify-between p-5 rounded-2xl border transition-all",
                 check.status === "granted"
@@ -283,8 +283,12 @@ export default function PreCheck() {
                   : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400"
               )}>
                 <div className="flex items-center space-x-4">
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center",
+                  <div className={cn("relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
                     check.status === "granted" ? "bg-emerald-100 dark:bg-emerald-800" : "bg-slate-100 dark:bg-slate-800")}>
+                    {/* Ping Animation overlay when active */}
+                    {check.status === "granted" && (
+                      <span className="absolute inset-0 rounded-xl animate-ping bg-emerald-400 opacity-20 duration-1000" style={{ animationDelay: `${idx * 150}ms` }}></span>
+                    )}
                     {key === "camera" && <Camera size={20} />}
                     {key === "mic" && <Mic size={20} />}
                     {key === "internet" && <Wifi size={20} />}
@@ -292,8 +296,8 @@ export default function PreCheck() {
                   </div>
                   <span className="font-bold">{check.label}</span>
                 </div>
-                {check.status === "granted" && <CheckCircle2 size={24} />}
-                {check.status === "denied" && <AlertCircle size={24} />}
+                {check.status === "granted" && <CheckCircle2 size={24} className="animate-[pulse_2s_ease-in-out_infinite]" />}
+                {check.status === "denied" && <AlertCircle size={24} className="animate-bounce" />}
               </div>
             ))}
           </div>
@@ -342,8 +346,11 @@ export default function PreCheck() {
               </div>
             )}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center space-x-2 bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/20">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-[10px] font-black text-white uppercase tracking-widest">Live Preview</span>
+              <div className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+              </div>
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">Live Preview Active</span>
             </div>
           </div>
 

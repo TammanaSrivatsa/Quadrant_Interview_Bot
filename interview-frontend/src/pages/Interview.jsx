@@ -170,7 +170,7 @@ export default function Interview() {
   const [previewReady,    setPreviewReady]     = useState(false);
   const [previewWarning,  setPreviewWarning]   = useState("");
   const [answerFeedback,  setAnswerFeedback]   = useState(null);
-  const [proctorAlert,   setProctorAlert]     = useState("");
+  const [proctorAlert,    setProctorAlert]     = useState("");
 
   const videoRef             = useRef(null);
   const autoSubmittedRef     = useRef(false);
@@ -511,20 +511,28 @@ export default function Interview() {
       canvas.height = videoRef.current.videoHeight || 240;
       ctx.drawImage(videoRef.current, 0, 0);
       const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.7));
-      if (!blob) return;
-      const fd = new FormData();
-      fd.append("frame", blob, "scan.jpg");
-      const res = await proctorApi.uploadFrame(sessionId, blob, eventType);
-      
-      // NEW: Real-time proctoring alerts to candidate
-      if (res && res.frame_reasons && res.frame_reasons.length > 0) {
-        setProctorAlert(res.frame_reasons[0]);
-        // Auto-clear alert after 6 seconds
-        setTimeout(() => setProctorAlert(""), 6000);
-      } else {
-        setProctorAlert("");
+      if (blob) {
+        const res = await proctorApi.uploadFrame(sessionId, blob, eventType);
+        
+        // NEW: Real-time proctoring alerts to candidate
+        if (res && res.frame_reasons && res.frame_reasons.length > 0) {
+          setProctorAlert(res.frame_reasons[0]);
+          // Auto-clear alert after 6 seconds
+          setTimeout(() => setProctorAlert(""), 6000);
+        } else {
+          setProctorAlert("");
+        }
       }
-    } catch { /* silent */ }
+    } catch (err) {
+      if (err?.message?.includes("429")) {
+        setProctorAlert("Interview is paused due to repeated framing violations.");
+        setTimeout(() => {
+          setProctorAlert("");
+          loadSession();
+        }, 6000);
+      }
+      // silent fail for other errors
+    }
   }, [sessionId, previewReady]);
 
   useEffect(() => {
