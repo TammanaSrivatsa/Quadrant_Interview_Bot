@@ -120,6 +120,10 @@ def update_profile(
     current_user: SessionUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"PUT /auth/profile user={current_user.user_id} role={current_user.role}")
+    
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name cannot be empty")
@@ -152,6 +156,10 @@ def change_password(
     current_user: SessionUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"POST /auth/change-password user={current_user.user_id} role={current_user.role}")
+
     if len(payload.new_password) < 6:
         raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
 
@@ -245,9 +253,14 @@ def logout(request: Request) -> dict[str, object]:
 
 @router.get("/auth/me")
 def me(
+    request: Request,
     current_user: SessionUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"GET /auth/me user={current_user.user_id} role={current_user.role}")
+    
     if current_user.role == "candidate":
         candidate = get_candidate_or_404(db, current_user.user_id)
         return {

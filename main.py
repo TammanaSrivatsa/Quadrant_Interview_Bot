@@ -83,21 +83,35 @@ async def _preload_ml_model() -> None:
     threading.Thread(target=_load_model, name="st-model-preload", daemon=True).start()
 
 
+# ── Environment & Production Safety ──────────────────────────────────────────
+IS_PROD = os.getenv("ENV", "development").strip().lower() == "production"
+logger.info(f"STARTUP: mode={'PRODUCTION' if IS_PROD else 'DEVELOPMENT'}")
+
 _secret_key = os.getenv("SECRET_KEY")
 if not _secret_key:
-    raise RuntimeError(
-        "SECRET_KEY is not set in .env. "
-        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
-    )
+    if IS_PROD:
+        raise RuntimeError("SECRET_KEY MUST be set in production via environment variables.")
+    else:
+        logger.warning("SECRET_KEY not set. Using insecure default for local development.")
+        _secret_key = "dev-secret-key-12345"
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=_secret_key,
-    same_site="lax",
-    https_only=False,
+    session_cookie="interview_bot_sid",
+    same_site="none" if IS_PROD else "lax",
+    https_only=IS_PROD,
 )
+
+# ── CORS Configuration ───────────────────────────────────────────────────────
+# In production, ONLY allow your Vercel URL. In dev, allow localhost.
+DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+raw_origins = os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS)
+allow_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
