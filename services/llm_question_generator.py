@@ -431,79 +431,55 @@ def build_structured_question_input(
 # Prompt construction -------------------------------------------------------
 
 def _llm_user_prompt(structured_input: StructuredQuestionInput, question_count: int, retry_note: str | None = None) -> str:
-    # ── Build a concrete evidence snapshot so the LLM has explicit names/facts ──
+    # ── COMPACT EVIDENCE SNAPSHOT (Limit tokens) ──
     evidence_lines: list[str] = []
     if structured_input.resume_projects:
-        evidence_lines.append("CANDIDATE'S ACTUAL PROJECTS (use these names verbatim in questions):")
-        for p in structured_input.resume_projects[:6]:
-            evidence_lines.append(f"  - {p[:150]}") # Truncate long project names
+        evidence_lines.append("ACTUAL PROJECTS (Verbatim names):")
+        for p in structured_input.resume_projects[:4]: # Limit to top 4
+            evidence_lines.append(f"  - {p[:120]}")
     if structured_input.resume_measurable_impact:
-        evidence_lines.append("MEASURABLE OUTCOMES (reference these numbers/results directly):")
-        for m in structured_input.resume_measurable_impact[:5]:
-            evidence_lines.append(f"  - {m[:200]}") # Truncate long impacts
-    if structured_input.resume_experiences:
-        evidence_lines.append("RECENT ROLES/EXPERIENCE (ground questions in these):")
-        for e in structured_input.resume_experiences[:4]:
-            evidence_lines.append(f"  - {e[:200]}") # Truncate long experience bullets
+        evidence_lines.append("NUMERIC IMPACTS:")
+        for m in structured_input.resume_measurable_impact[:3]:
+            evidence_lines.append(f"  - {m[:150]}")
     
-    # ... rest of the evidence snapshot ...
-    if structured_input.overlap_skills:
-        evidence_lines.append(f"SKILLS ON BOTH RESUME AND JD: {', '.join(structured_input.overlap_skills[:8])}")
+    # ── COMPACT JD OVERLAP ──
+    overlap = structured_input.overlap_skills[:8] # Top 8 JD skills only
+    evidence_lines.append(f"OVERLAPPING JD SKILLS: {', '.join(overlap)}")
     
     evidence_snapshot = "\n".join(evidence_lines)
     
-    # Truncate JSON context to avoid TPM limits
-    context_dict = asdict(structured_input)
-    # Surgical truncation of largest fields
-    context_dict['resume_summary'] = context_dict['resume_summary'][:500]
-    context_dict['jd_summary'] = context_dict['jd_summary'][:1000]
-    context_dict['resume_experiences'] = [str(x)[:200] for x in context_dict['resume_experiences'][:4]]
-    context_dict['resume_projects'] = [str(x)[:200] for x in context_dict['resume_projects'][:5]]
+    # ── ADAPTIVE DIFFICULTY HINT ──
+    difficulty_hint = "STANDARD DEPTH: Practical implementation focus."
+    if _is_senior_profile(structured_input) or _is_architect_profile(structured_input):
+        difficulty_hint = "HIGH DIFFICULTY: Ask for complex tradeoffs, internals, or failure modes."
+    elif structured_input.experience_level == "junior":
+        difficulty_hint = "FOUNDATIONAL DEPTH: Focus on core principles and clear execution."
 
     instructions = [
-        f"Generate exactly {question_count} interview questions for this specific candidate.",
-        "SINGLE QUESTION RULE (HIGHEST PRIORITY): Each question text must contain EXACTLY ONE question mark. NEVER combine two questions like 'X? Also Y?' or 'A? And how did you B?'. Each text is ONE sentence, ONE question mark.",
-        "CRITICAL: Your questions must be so specific to THIS resume that they could not be asked of any other candidate.",
-        f"Use the EVIDENCE SNAPSHOT below — reference the actual project names, numbers, and role titles in your question text.",
-        "80% of questions must directly reference a named project, platform, role, or measurable outcome from the resume.",
-        "20% can be intro/behavioral — but even the intro should mention this role and what their resume shows.",
-        "Do NOT produce generic questions. Every question must have a 'project_name' or a specific resume fact in its text.",
-        "Mirror this flow: intro -> project execution deep dive -> implementation trade-off -> architecture/design -> debugging/failure -> scaling/performance -> (if senior) leadership/stakeholder -> (1 behavioral).",
-        "If the same project appears in multiple questions, each must probe a completely different angle (e.g., one on execution, one on failure, one on scaling).",
-        "Include at least one architecture/design question.",
-        "Include at least one debugging/failure/root-cause question.",
-        "Include at least one scaling/performance question.",
-        "Do NOT mention the candidate's full name, email, phone, or location in any question.",
-        "Vary the opening phrases — no more than 2 questions can start with the same words.",
-        "Include at most 1 JD-gap question (skill in JD but missing from resume) — only if it's critical.",
-        "Reference answers must specifically describe what a strong answer covers for THIS question, not a generic script.",
-        "BANNED phrases: 'end to end', 'most relevant project', 'what is your experience with', 'explain what is', 'walk me through your resume', 'tell me about yourself'.",
-        "DATE RANGE BAN: NEVER use a date range (e.g. 'Jan 2026 – Present', '2024-2025', 'Q1 2026', 'recent months') as a project name or project reference. A project name must be a real product/platform/tool name like 'Interview Bot', 'Databricks Lakehouse', 'React dashboard', etc.",
-        "FINAL CHECK before outputting: count question marks in each text field. Reject and rewrite any text with more than 1 question mark.",
+        f"Generate exactly {question_count} questions.",
+        f"DIFFICULTY LEVEL: {difficulty_hint}",
+        "STRICT RESUME-FIRST: Only ask about technologies and projects in the snapshot above.",
+        "JD-LIMIT: Do not ask about JD skills if they are not in the candidate's overlap list.",
+        "SINGLE INTENT: Exactly one question mark per text field. Max 25 words.",
+        "Ground 80% of questions in named projects/outcomes.",
+        "Vary openings. Include design, failure, and scaling probes.",
     ]
-    role_track = _structured_role_track(structured_input)
-    if role_track == "frontend":
-        instructions.append("Role track is FRONTEND: focus on UI architecture, component design, state management, API integration, and browser/responsiveness concerns tied to their specific projects.")
-    elif role_track == "data":
-        instructions.append("Role track is DATA/DATABRICKS: focus on platform design, governance, pipeline reliability, quality, cost, and scale tied to their specific data projects.")
-    elif role_track == "aiml":
-        instructions.append("Role track is AI/ML: focus on model choices, evaluation, prompt design, failure analysis, drift, and serving tied to their specific ML work.")
-    else:
-        instructions.append("Role track is BACKEND/GENERAL ENGINEERING: focus on API design, service reliability, data flow, integration, debugging, and scaling tied to their specific backend work.")
-    if _is_senior_profile(structured_input):
-        instructions.append("This is a SENIOR profile: include at least one question about leadership, stakeholder alignment, delivery decisions, or mentoring tied to their actual experience.")
-    if _is_architect_profile(structured_input):
-        instructions.append("This role has ARCHITECT signals: include at least one design/trade-off/system boundary question referencing their actual system or platform.")
     if retry_note:
         instructions.append(retry_note)
 
+    # Minimize JSON context
+    context = {
+        "role": structured_input.role_title,
+        "family": structured_input.role_family,
+        "seniority": structured_input.experience_level,
+        "resume_summary": structured_input.resume_summary[:300],
+        "overlap_skills": overlap
+    }
+
     return (
-        "=== EVIDENCE SNAPSHOT (use these specific facts in your questions) ===\n"
-        + evidence_snapshot
-        + "\n\n=== INSTRUCTIONS ===\n"
-        + "\n".join(instructions)
-        + "\n\n=== CANDIDATE/JD FULL CONTEXT (JSON) ===\n"
-        + json.dumps(asdict(structured_input), indent=2)
+        "=== EVIDENCE SNAPSHOT ===\n" + evidence_snapshot +
+        "\n\n=== INSTRUCTIONS ===\n" + "\n".join(instructions) +
+        "\n\n=== CONTEXT ===\n" + json.dumps(context)
     )
 
 
@@ -907,6 +883,7 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
         structured_input.role_family,
     )
     try:
+        # Use GEMINI for heavy generation task (higher token limits)
         response = _get_client().chat.completions.create(
             model=model,
             messages=[
@@ -915,8 +892,9 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
             ],
             temperature=0.25 if retry_note else 0.35,
             max_tokens=8000,
+            provider_override="gemini",
         )
-        logger.info("llm_question_request_success provider=%s model=%s retry=%s", provider, model, bool(retry_note))
+        logger.info("llm_question_request_success provider=gemini model=%s retry=%s", model, bool(retry_note))
     except Exception as exc:
         logger.warning("llm_question_request_failure provider=%s model=%s retry=%s error=%s", provider, model, bool(retry_note), exc)
         raise

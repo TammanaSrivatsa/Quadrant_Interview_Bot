@@ -254,13 +254,24 @@ class _LLMClientAdapter:
                 api_key=config["groq_api_key"]
             )
             
-        # Initialize Ollama as fallback or explicit choice
+        # Initialize Ollama
         self._adapters["ollama"] = _ChatCompletionsAdapter(
             provider="ollama",
             model=config["standard_model"],
             api_key="",
             ollama_url=config["ollama_url"]
         )
+        
+        # Restore the .chat.completions interface
+        self.chat = SimpleNamespace(
+            completions=SimpleNamespace(
+                create=self.create_compat
+            )
+        )
+
+    def create_compat(self, **kwargs: Any) -> Any:
+        """Compatibility wrapper for .chat.completions.create(...)"""
+        return self.create(**kwargs)
 
     def create(
         self,
@@ -367,7 +378,7 @@ Rules:
 - be practical and human-like, not harsh
 - strengths and weaknesses must each be arrays of short strings
 - dimension_breakdown must contain integers 0-100 for relevance, correctness, completeness, clarity, confidence
-\"\"\"
+"""
     # USE STANDARD MODEL (8B) for evaluation to avoid 429 Rate Limits
     response = _get_client().chat.completions.create(
         model=_llm_model(),

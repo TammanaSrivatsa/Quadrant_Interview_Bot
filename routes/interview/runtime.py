@@ -749,79 +749,63 @@ def _create_next_question(
 
 
 
+def _is_redundant_text(new_text: str, existing_texts: list[str]) -> bool:
+    """Primary redundancy gate using content-word overlap."""
+    if not new_text:
+        return True
+    
+    def get_tokens(text):
+        cleaned = re.sub(r"[^a-z0-9\s]", "", (text or "").lower())
+        return set(cleaned.split())
+    
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'for', 'on', 'with', 'is', 'are', 'your', 'you', 'how', 'why', 'what'}
+    new_tokens = get_tokens(new_text) - stop_words
+    
+    for prev in existing_texts:
+        prev_tokens = get_tokens(prev) - stop_words
+        if not new_tokens or not prev_tokens:
+            continue
+        overlap = len(new_tokens & prev_tokens) / max(len(new_tokens), len(prev_tokens))
+        if overlap > 0.65: # High semantic overlap threshold
+            return True
+    return False
+
+
 def _is_stale_question_bank(questions: list[dict[str, Any]]) -> tuple[bool, str]:
-
     if not questions:
-
         return False, "empty"
 
-
-
     texts = [str(item.get("text") or "").strip() for item in questions if str(item.get("text") or "").strip()]
+    
+    # Check for prefix/redundancy in the bank itself
+    for i, text in enumerate(texts):
+        if _is_redundant_text(text, texts[:i]):
+            return True, "redundant_in_bank"
 
     lowered = [text.lower() for text in texts]
-
-    first_six: set[str] = set()
-
-    duplicate_prefix = False
-
-    for text in lowered:
-
-        prefix = " ".join(text.split()[:6]).strip()
-
-        if prefix and prefix in first_six:
-
-            duplicate_prefix = True
-
-            break
-
-        if prefix:
-
-            first_six.add(prefix)
-
-
-
     has_debugging = any(any(token in text for token in ("debug", "root cause", "bottleneck", "what failed", "what went wrong")) for text in lowered)
-
     has_design = any(any(token in text for token in ("scale", "redesign", "architecture", "trade-off", "tradeoff", "reliability", "observability")) for text in lowered)
-
-    has_legacy_pattern = any(
-
-        "think back to a recent challenge where" in text
-
-        or "your expertise in" in text
-
-        or "used x end to end" in text
-
-        for text in lowered
-
-    )
-
-
-
-    if has_legacy_pattern:
-
-        return True, "legacy_pattern"
-
-    if duplicate_prefix:
-
-        return True, "duplicate_prefix"
-
+    
     if not has_debugging:
-
         return True, "missing_debugging"
-
     if not has_design:
-
         return True, "missing_design"
-
-    coverage = _question_bank_category_coverage(questions)
-
-    if not coverage["has_intro"] or not coverage["has_project_like"] or not coverage["has_behavioral"]:
-
-        return True, "missing_category_coverage"
-
     return False, "ok"
+
+
+def _evaluate_answer_quality(answer: str) -> str:
+    """Heuristic for adaptive difficulty."""
+    answer = (answer or "").strip()
+    words = answer.split()
+    if len(words) < 15:
+        return "weak"
+    
+    signals = {"because", "tradeoff", "bottleneck", "optimized", "instead", "internals", "latency", "failure"}
+    signal_count = sum(1 for w in signals if w in answer.lower())
+    
+    if signal_count >= 2 or len(words) > 40:
+        return "strong"
+    return "average"
 
 
 
