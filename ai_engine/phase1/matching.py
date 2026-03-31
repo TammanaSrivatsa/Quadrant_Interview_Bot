@@ -2,6 +2,8 @@ import re
 import logging
 from threading import Lock
 
+from typing import Any
+
 logger = logging.getLogger(__name__)
 
 # --- Safe Dependency Imports ---
@@ -13,11 +15,11 @@ except ImportError:
     logger.warning("Lite Mode: sentence-transformers or scikit-learn not found. Falling back to keyword matching.")
     SEMANTIC_SEARCH_ENABLED = False
 
-_MODEL: SentenceTransformer | None = None
+_MODEL: Any | None = None
 _MODEL_LOCK = Lock()
 
 
-def _get_model() -> SentenceTransformer | None:
+def _get_model() -> Any | None:
     global _MODEL
     if not SEMANTIC_SEARCH_ENABLED:
         return None
