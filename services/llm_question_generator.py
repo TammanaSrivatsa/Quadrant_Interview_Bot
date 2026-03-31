@@ -883,7 +883,7 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
         structured_input.role_family,
     )
     try:
-        # Use GEMINI for heavy generation task (higher token limits)
+        # Use configured LLM provider from .env
         response = _get_client().chat.completions.create(
             model=model,
             messages=[
@@ -891,10 +891,9 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.25 if retry_note else 0.35,
-            max_tokens=8000,
-            provider_override="gemini",
+            max_tokens=2000,
         )
-        logger.info("llm_question_request_success provider=gemini model=%s retry=%s", model, bool(retry_note))
+        logger.info("llm_question_request_success provider=%s model=%s retry=%s", provider, model, bool(retry_note))
     except Exception as exc:
         logger.warning("llm_question_request_failure provider=%s model=%s retry=%s error=%s", provider, model, bool(retry_note), exc)
         raise

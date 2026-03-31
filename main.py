@@ -42,11 +42,14 @@ Base.metadata.create_all(bind=engine)
 
 
 # ── LLM provider startup checks ─────────────────────────────────────────────
-_llm_provider = (os.getenv("LLM_PROVIDER") or "ollama").strip().lower()
+
+# Dynamically handle LLM provider and model
+_llm_provider = (os.getenv("LLM_PROVIDER") or "cohere").strip().lower()
+_llm_model = (os.getenv("LLM_STANDARD_MODEL") or "command-r").strip()
+
 if _llm_provider == "groq":
     _groq_key = os.getenv("GROQ_API_KEY", "")
-    _groq_model = (os.getenv("LLM_STANDARD_MODEL") or "llama-3.1-8b-instant").strip()
-    logger.info("LLM provider is groq with model=%s", _groq_model)
+    logger.info("LLM provider is groq with model=%s", _llm_model)
     if not _groq_key:
         logger.warning(
             "GROQ_API_KEY is not set. "
@@ -54,13 +57,18 @@ if _llm_provider == "groq":
             "Set GROQ_API_KEY in .env when using LLM_PROVIDER=groq."
         )
 elif _llm_provider == "ollama":
-    _ollama_model = (os.getenv("OLLAMA_MODEL") or "qwen2.5-coder:3b").strip()
-    logger.info("LLM provider is ollama with model=%s", _ollama_model)
-elif _llm_provider == "gemini":
-    _gemini_model = (os.getenv("LLM_STANDARD_MODEL") or "gemini-2.0-flash").strip()
-    logger.info("LLM provider is gemini with model=%s", _gemini_model)
+    logger.info("LLM provider is ollama with model=%s", _llm_model)
+elif _llm_provider == "cohere":
+    _cohere_key = os.getenv("COHERE_API_KEY", "")
+    logger.info("LLM provider is cohere with model=%s", _llm_model)
+    if not _cohere_key:
+        logger.warning(
+            "COHERE_API_KEY is not set. "
+            "LLM answer generation may be unavailable. "
+            "Set COHERE_API_KEY in .env when using LLM_PROVIDER=cohere."
+        )
 else:
-    logger.warning("Unknown LLM_PROVIDER=%s. Expected one of: ollama, groq, gemini", _llm_provider)
+    logger.warning("Unknown LLM_PROVIDER=%s. Expected one of: ollama, groq, cohere", _llm_provider)
 
 
 # ── FIX: Pre-load SentenceTransformer on startup ────────────────────────────
