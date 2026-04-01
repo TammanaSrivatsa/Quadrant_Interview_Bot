@@ -118,7 +118,11 @@ def _candidate_result_scope(db: Session, hr_id: int):
     return (
         db.query(Result)
         .join(JobDescription, Result.job_id == JobDescription.id)
-        .options(joinedload(Result.candidate), joinedload(Result.job), joinedload(Result.sessions))
+        .options(
+            joinedload(Result.candidate).joinedload(Candidate.selected_jd),
+            joinedload(Result.job),
+            joinedload(Result.sessions),
+        )
         .filter(JobDescription.company_id == hr_id)
     )
 
@@ -416,7 +420,15 @@ def hr_dashboard(
     if selected_job:
         results = (
             db.query(Result)
-            .options(joinedload(Result.candidate), joinedload(Result.job), joinedload(Result.sessions))
+            .options(
+                joinedload(Result.candidate).joinedload(Candidate.selected_jd),
+                joinedload(Result.job),
+                joinedload(Result.sessions),
+            )
+            .filter(Result.job_id == selected_job.id, Result.shortlisted.is_(True))
+            .order_by(Result.id.desc())
+            .all()
+        )
             .filter(Result.job_id == selected_job.id, Result.shortlisted.is_(True))
             .order_by(Result.id.desc())
             .all()
