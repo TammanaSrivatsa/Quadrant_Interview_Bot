@@ -64,6 +64,9 @@ ABSOLUTE RULES:
 - Every question except the intro MUST reference a SPECIFIC project, technology, company, outcome, or achievement that appears in this candidate's resume.
 - If a question could be asked of any random candidate, it is REJECTED. Rewrite it with a specific reference.
 - Use the candidate's actual project names, platform names, and measurable results in the question text itself.
+- NEVER use generic phrasing like "in your project", "on your project", "in this project". You MUST inject the EXACT project name from the resume into every question that references a project (e.g. "In your Data Pipeline project...", "During your work on the Fraud Detection System...").
+- NEVER refer to the candidate by their name in any question text.
+- NEVER include standalone dates, months, years, or date ranges (e.g. "January 2026", "2024-2025", "Mar 2023") in your question text.
 - Do NOT rephrase resume bullet points as questions. Instead, probe the implementation, trade-offs, failures, and decisions BEHIND those bullets.
 - 80% of questions must be grounded in the candidate's specific experience. Only 20% can be intro/behavioral.
 
@@ -1566,9 +1569,12 @@ def generate_dynamic_next_question(
             max_tokens=1000,
         )
         data = _extract_json_object(response.choices[0].message.content or "")
+        raw_text = data.get("text")
+        if not raw_text:
+            return None
         return {
-            "text": _clean(data.get("text")),
-            "category": _normalize_category(data.get("category"), data.get("text")),
+            "text": _clean(raw_text),
+            "category": _normalize_category(data.get("category"), _clean(raw_text)),
             "project_name": _clean(data.get("project_name")),
             "intent": _clean(data.get("intent")),
             "reference_answer": _clean(data.get("reference_answer")),

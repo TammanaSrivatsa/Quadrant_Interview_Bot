@@ -38,6 +38,7 @@ def build_resume_advice(
     resume_text: str,
     jd_skill_scores: dict[str, int] | None,
     explanation: dict[str, object] | None,
+    candidate_name: str | None = None,
 ) -> dict[str, object]:
     normalized_text = (resume_text or "").strip()
     ordered_skills = _skill_order(jd_skill_scores)
@@ -58,7 +59,7 @@ def build_resume_advice(
         if skill in set(missing_skills)
     ][:4]
 
-    projects = extract_projects_from_resume(normalized_text, known_skills=dict(ordered_skills))
+    projects = extract_projects_from_resume(normalized_text, known_skills=dict(ordered_skills), candidate_name=candidate_name)
     project_tips = []
     for index, project in enumerate(projects[:2], start=1):
         focus_skill = priority_gaps[index - 1]["skill"] if len(priority_gaps) >= index else (strengths[0] if strengths else "your core stack")

@@ -716,31 +716,34 @@ def _create_next_question(
         
         # If we have an answer to the previous question, we can potentially generate a dynamic one
         if i > 0 and last_answer and i == current_idx:
-            from services.llm_question_generator import generate_dynamic_next_question
-            
-            history = []
-            for prev in ordered[:i]:
-                ans = db.query(InterviewAnswer).filter(InterviewAnswer.question_id == prev.id).first()
-                history.append({"question": prev.question_text, "answer": ans.answer_text if ans else ""})
-            
-            job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
-            candidate = result.candidate
-            
-            new_q_data = generate_dynamic_next_question(
-                resume_text=candidate.resume_text or "",
-                jd_title=job.title or job.jd_title or "",
-                jd_skill_scores=job.weights_json or job.skill_scores or {},
-                history=history,
-                question_count=len(ordered)
-            )
-            
-            if new_q_data:
-                item.question_text = new_q_data["text"]
-                item.category = new_q_data["category"]
-                item.intent_focus = new_q_data["intent"]
-                item.reference_answer = new_q_data["reference_answer"]
-                db.add(item)
-                db.commit()
+            try:
+                from services.llm_question_generator import generate_dynamic_next_question
+                
+                history = []
+                for prev in ordered[:i]:
+                    ans = db.query(InterviewAnswer).filter(InterviewAnswer.question_id == prev.id).first()
+                    history.append({"question": prev.text, "answer": ans.answer_text if ans else ""})
+                
+                job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
+                candidate = result.candidate
+                
+                new_q_data = generate_dynamic_next_question(
+                    resume_text=(candidate.resume_text if candidate else "") or "",
+                    jd_title=(job.title or job.jd_title or "") if job else "",
+                    jd_skill_scores=(job.weights_json or job.skill_scores or {}) if job else {},
+                    history=history,
+                    question_count=len(ordered)
+                )
+                
+                if new_q_data:
+                    item.text = new_q_data["text"]
+                    item.question_type = "followup" if new_q_data.get("category") == "followup" else item.question_type
+                    item.intent = new_q_data["intent"]
+                    item.reference_answer = new_q_data["reference_answer"]
+                    db.add(item)
+                    db.commit()
+            except Exception as exc:
+                logger.warning("dynamic_question_generation_failed error=%s", exc)
 
         if item.started_at is None:
             item.started_at = datetime.utcnow()
@@ -1787,17 +1790,17 @@ def interview_answer(
 
 
 
+    max_questions = int(session.max_questions or 8)
     # --- Adaptive Probing (Phase 2) ---
     is_shallow = (relevance_score < 0.7) and (len(answer_text) < 250) and (not payload.skipped)
 
     if is_shallow and question.question_type != "followup" and answered_count < max_questions:
-        from services.llm_question_generator import generate_followup_question
+        try:
+            from services.llm_question_generator import generate_followup_question
 
-        # Generate the follow-up
-        resume_text = ""
-        candidate = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
-        if candidate and candidate.resume_path:
-            resume_text = extract_text_from_file(candidate.resume_path)
+            # Generate the follow-up
+            candidate = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
+            resume_text = (candidate.resume_text if candidate else "") or ""
 
         followup_data = generate_followup_question(question.text, answer_text, resume_text)
 

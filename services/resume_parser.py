@@ -108,6 +108,7 @@ def _bullets(lines: list[str], max_items: int = 6) -> list[str]:
 def extract_projects_from_resume(
     resume_text: str,
     known_skills: dict[str, object] | None = None,
+    candidate_name: str | None = None,
 ) -> list[str]:
     """Best-effort project extraction shared by resume advice and legacy callers."""
     _ = known_skills
@@ -119,6 +120,34 @@ def extract_projects_from_resume(
     projects: list[str] = []
     in_project_section = False
     project_title = None
+
+    # Pre-compute name tokens to scrub from project titles
+    name_tokens: set[str] = set()
+    if candidate_name:
+        name_tokens.add(_clean(candidate_name).lower())
+        for part in candidate_name.split():
+            if len(part) > 1:
+                name_tokens.add(part.lower())
+
+    def _scrub_name(title: str) -> str:
+        """Remove candidate name tokens from a project title."""
+        result = title
+        for token in name_tokens:
+            result = re.sub(re.escape(token), "", result, flags=re.IGNORECASE)
+        # Clean up possessive artifacts left after name removal (e.g. "'s", "'")
+        result = re.sub(r"\b's\b", "", result, flags=re.IGNORECASE)
+        result = re.sub(r"\s+", " ", result).strip(" -|:'")
+        return result
+
+    def _is_valid_project_title(title: str) -> bool:
+        """Reject titles that are pure date ranges or too short."""
+        stripped = title.strip()
+        if len(stripped) < 3:
+            return False
+        if _DATE_RANGE_LINE_RE.match(stripped):
+            return False
+        return True
+
     for i, raw_line in enumerate(lines):
         line = raw_line.strip()
         if not line:
@@ -135,10 +164,13 @@ def extract_projects_from_resume(
             project_title = None
             continue
         if in_project_section:
+            # Skip pure date-range lines (e.g. "Jan 2026 – Present", "2022 - 2023")
+            if _DATE_RANGE_LINE_RE.match(line):
+                continue
             # Project title: line ending with ':' or bolded
             if re.match(r"^[A-Za-z0-9\- &()]+:.*$", line) or (len(line) < 80 and not line.startswith("•") and not line.startswith("-") and not line.startswith("*")):
-                project_title = line.rstrip(":")
-                if project_title and project_title not in projects:
+                project_title = _scrub_name(line.rstrip(":"))
+                if project_title and _is_valid_project_title(project_title) and project_title not in projects:
                     projects.append(project_title)
                 continue
             # Bullet or description
@@ -152,8 +184,8 @@ def extract_projects_from_resume(
         for line in lines:
             lower = line.lower()
             if any(keyword in lower for keyword in ("system", "portal", "app", "application", "dashboard", "bot", "platform", "website", "project", "tool")):
-                if len(line) > 3:
-                    projects.append(line)
+                if len(line) > 3 and not _DATE_RANGE_LINE_RE.match(line):
+                    projects.append(_scrub_name(line) if name_tokens else line)
     seen = set()
     unique_projects: list[str] = []
     for project in projects:
@@ -211,14 +243,15 @@ def parse_resume_text(text: str) -> dict[str, object]:
         if impact_pattern.search(line):
             measurable_impacts.append(line.strip())
 
+    name = _detect_name(lines, email_match.group(0) if email_match else None)
     return {
-        "full_name": _detect_name(lines, email_match.group(0) if email_match else None),
+        "full_name": name,
         "email": email_match.group(0) if email_match else None,
         "phone": _clean(phone_match.group(0)) if phone_match else None,
         "summary": " ".join(summary_lines[:3]).strip() or None,
         "skills": _extract_skills(raw_text),
         "education": _bullets(sections.get("education") or [], max_items=5),
-        "projects": extract_projects_from_resume(raw_text),
+        "projects": extract_projects_from_resume(raw_text, candidate_name=name),
         "experience": experience_entries,
         "measurable_impacts": measurable_impacts,
         "certifications": _bullets(sections.get("certifications") or [], max_items=5),

@@ -72,6 +72,7 @@ def _resume_advice_payload(
         resume_text=resume_text,
         jd_skill_scores=selected_jd.weights_json or {},
         explanation=explanation or {},
+        candidate_name=getattr(candidate, 'name', None) or None,
     )
 
 
@@ -357,6 +358,7 @@ def candidate_practice_kit(
         resume_text=resume_text,
         jd_skill_scores=selected_jd.weights_json or {},
         explanation=explanation,
+        candidate_name=getattr(candidate, 'name', None) or None,
     )
 
     return {

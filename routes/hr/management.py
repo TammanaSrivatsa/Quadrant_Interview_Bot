@@ -690,6 +690,7 @@ def hr_candidate_detail(
             resume_text=resume_text,
             jd_skill_scores=latest_job.skill_scores or {},
             explanation=latest_result.explanation or {},
+            candidate_name=candidate.name,
         )
     return {
         "ok": True,

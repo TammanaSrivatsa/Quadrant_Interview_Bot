@@ -197,7 +197,20 @@ def _llm_model() -> str: return _resolve_llm_config()["primary_model"]
 def _llm_premium_model() -> str: return _resolve_llm_config()["primary_model"] # Default to primary
 
 def extract_skills(jd_text: str) -> dict[str, int]:
-    prompt = f"Extract technical skills as JSON {{skill: weight}} from:\n{jd_text[:4000]}"
+    prompt = (
+        "Extract ONLY core technical skills (programming languages, frameworks, libraries, "
+        "databases, cloud platforms, DevOps tools, infrastructure technologies) from the job "
+        "description below. Return a JSON dictionary in the exact format {\"skill\": weight} "
+        "where weight is an integer from 1-10 based on how prominently the skill appears.\n\n"
+        "STRICT RULES:\n"
+        "- Include ONLY hard technical skills.\n"
+        "- Completely ignore soft skills (e.g. Communication, Teamwork, Leadership, Problem Solving).\n"
+        "- Completely ignore methodologies (e.g. Agile, Scrum, Kanban, TDD, CI/CD as a concept).\n"
+        "- Completely ignore company descriptions, benefits, or cultural statements.\n"
+        "- Do NOT include generic terms like 'Computer Science', 'Engineering', 'Technology'.\n"
+        "- Return ONLY the JSON dictionary, no explanation.\n\n"
+        f"Job Description:\n{jd_text[:4000]}"
+    )
     try:
         resp = _get_client().create(messages=[{"role": "user", "content": prompt}], temperature=0.1, max_tokens=300)
         return json.loads(_clean_json(resp.choices[0].message.content))
