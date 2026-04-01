@@ -15,7 +15,7 @@ from pathlib import Path
 from utils.token_utils import log_token_usage
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv()
 
 CACHE_DIR = Path(".cache")
 CACHE_DIR.mkdir(exist_ok=True)

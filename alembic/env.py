@@ -19,7 +19,7 @@ config = context.config
 
 # Set database URL from env
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv()
 db_url = os.getenv("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)

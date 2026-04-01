@@ -14,7 +14,8 @@ FIXES applied:
 """
 from __future__ import annotations
 from dotenv import load_dotenv
-load_dotenv(override=True)
+# Load .env for local dev only — NEVER override real platform env vars on Render.
+load_dotenv()
 import logging
 import os
 import threading

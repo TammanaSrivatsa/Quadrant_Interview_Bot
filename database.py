@@ -10,17 +10,30 @@ from dotenv import load_dotenv
 # ---------------------------
 # Base class used by all ORM models in models.py
 Base = declarative_base()
-load_dotenv(override=True)
+
+# Load .env for local dev only — NEVER override real environment variables.
+# On Render/Heroku, DATABASE_URL comes from the platform env and must not be
+# overwritten by a stale .env file that may contain localhost credentials.
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Fallback DB for local development if env is missing.
 if not DATABASE_URL:
-    DATABASE_URL = "sqlite:///./interview_bot.db"
+    raise RuntimeError(
+        "DATABASE_URL is not set. "
+        "Provide it via environment variable (Render dashboard) or in .env for local dev. "
+        "Example: postgresql://user:password@host:5432/dbname"
+    )
 
 # SQLAlchemy requires 'postgresql://' but many platforms (Render, Heroku) provide 'postgres://'
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Render PostgreSQL URLs need sslmode=require for secure connections.
+# If the URL does not already contain sslmode, append it.
+if DATABASE_URL.startswith("postgresql://") and "sslmode" not in DATABASE_URL:
+    separator = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
 
 # Engine handles low-level DB connections.
 # For SQLite, check_same_thread=False is needed. For Postgres, it is not.
