@@ -1,5 +1,6 @@
 """Candidate-facing dashboard and resume workflows."""
 
+import logging
 import shutil
 import uuid
 from pathlib import Path
@@ -29,6 +30,7 @@ from services.resume_advice import build_resume_advice
 from utils.email_service import send_interview_email
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # Result.interview_questions remains the stored question-bank source of truth.
@@ -63,10 +65,10 @@ def _resume_advice_payload(
     selected_jd: JobDescription | None,
     explanation: dict[str, object] | None,
 ) -> dict[str, object] | None:
-    if not candidate.resume_path or not selected_jd:
+    if not selected_jd:
         return None
-    resume_text = extract_text_from_file(candidate.resume_path)
-    if not resume_text.strip():
+    resume_text = (candidate.resume_text or "").strip()
+    if not resume_text:
         return None
     return build_resume_advice(
         resume_text=resume_text,
@@ -187,7 +189,9 @@ def candidate_skill_match(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    resume_text = extract_text_from_file(candidate.resume_path)
+    resume_text = (candidate.resume_text or "").strip()
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Resume text is not available. Please re-upload your resume.")
     skill_match = compute_resume_skill_match(resume_text, (job.skill_scores or {}).keys())
     return {"ok": True, "job_id": job.id, **skill_match}
 
@@ -231,7 +235,19 @@ def upload_resume(
     db.commit()
     db.refresh(candidate)
 
+    score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
+    resume_text = (candidate.resume_text or "").strip()
+    logger.info(
+        "resume_upload_extracted candidate_id=%s file_path=%s text_len=%d stored_in_db=%s",
+        candidate.id,
+        candidate.resume_path,
+        len(resume_text),
+        bool(resume_text),
+    )
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Resume text could not be extracted. Please upload a valid PDF, DOCX, or TXT file.")
     if not selected_jd:
+        db.commit()
         return {
             "ok": True,
             "message": "Resume uploaded. No job description available yet.",
@@ -243,7 +259,6 @@ def upload_resume(
             "selected_jd_id": None,
         }
 
-    score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
     result = upsert_result(
         db,
         candidate.id,
@@ -253,9 +268,6 @@ def upload_resume(
         cutoff_score=float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
     )
 
-    # Main restored flow: generate and persist interview questions immediately
-    # after resume-vs-JD screening. Result.interview_questions is the source of truth.
-    resume_text = extract_text_from_file(candidate.resume_path)
     questions = _generate_result_question_bank(result=result, resume_text=resume_text, job=selected_jd)
     db.commit()
     db.refresh(result)
@@ -343,9 +355,9 @@ def candidate_practice_kit(
         raise HTTPException(status_code=400, detail="Select a JD before starting practice mode")
 
     selected_jd = _selected_jd_or_404(db, selected_jd_id)
-    resume_text = extract_text_from_file(candidate.resume_path)
-    if not resume_text.strip():
-        raise HTTPException(status_code=400, detail="Resume text could not be extracted")
+    resume_text = (candidate.resume_text or "").strip()
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Resume text is not available. Please re-upload your resume.")
 
     practice = build_practice_kit(
         resume_text=resume_text,

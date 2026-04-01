@@ -998,17 +998,49 @@ def _ensure_question_bank(
 
         )
 
-    if not candidate.resume_path:
+    resume_text = (candidate.resume_text or "").strip()
 
-        raise HTTPException(status_code=400, detail="Resume is required before interview questions can be prepared.")
+    if not resume_text:
 
+        if not candidate.resume_path:
 
+            raise HTTPException(status_code=400, detail="Resume is required before interview questions can be prepared.")
 
-    resume_text = extract_text_from_file(candidate.resume_path or "")
+        resume_text = extract_text_from_file(candidate.resume_path or "") or ""
 
-    if not resume_text.strip():
+        if resume_text.strip():
 
-        raise HTTPException(status_code=400, detail="Candidate resume text could not be extracted for interview question generation.")
+            candidate.resume_text = resume_text.strip()
+
+            db.add(candidate)
+
+            db.commit()
+
+            logger.info(
+
+                "resume_text_backfilled candidate_id=%s file_path=%s text_len=%d",
+
+                candidate.id,
+
+                candidate.resume_path,
+
+                len(resume_text),
+
+            )
+
+        else:
+
+            raise HTTPException(status_code=400, detail="Candidate resume text could not be extracted for interview question generation.")
+
+    logger.info(
+
+        "resume_text_loaded candidate_id=%s source=db text_len=%d",
+
+        candidate.id,
+
+        len(resume_text),
+
+    )
 
 
 
@@ -1235,11 +1267,31 @@ def interview_access(
 
 
 
-        resume_text = ""
+        resume_text = (candidate.resume_text or "").strip()
 
-        if candidate.resume_path:
+        if not resume_text and candidate.resume_path:
 
             resume_text = extract_text_from_file(candidate.resume_path) or ""
+
+            if resume_text.strip():
+
+                candidate.resume_text = resume_text.strip()
+
+                db.add(candidate)
+
+                db.commit()
+
+                logger.info(
+
+                    "resume_text_backfilled_access candidate_id=%s file_path=%s text_len=%d",
+
+                    candidate.id,
+
+                    candidate.resume_path,
+
+                    len(resume_text),
+
+                )
 
         jd_text = str(job.jd_text or "") if job else ""
 
