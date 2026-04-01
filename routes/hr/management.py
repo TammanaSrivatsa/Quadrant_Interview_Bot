@@ -429,10 +429,6 @@ def hr_dashboard(
             .order_by(Result.id.desc())
             .all()
         )
-            .filter(Result.job_id == selected_job.id, Result.shortlisted.is_(True))
-            .order_by(Result.id.desc())
-            .all()
-        )
         for result in results:
             candidate = result.candidate
             if not candidate:
