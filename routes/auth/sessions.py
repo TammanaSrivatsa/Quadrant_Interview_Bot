@@ -1,8 +1,11 @@
 """Health and authentication endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from collections import defaultdict, deque
+import time
 
 from auth import hash_password, password_needs_upgrade, verify_password
 from database import get_db
@@ -12,6 +15,29 @@ from routes.dependencies import SessionUser, get_current_user
 from routes.schemas import LoginBody, SignupBody
 
 router = APIRouter()
+
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+# In-memory sliding window rate limiter for login attempts.
+# Tracks failed attempts per IP address.
+_rate_limit_store: dict[str, deque] = defaultdict(deque)
+RATE_LIMIT_WINDOW = 300  # 5 minutes
+RATE_LIMIT_MAX = 10       # max attempts per window
+
+def _check_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    attempts = _rate_limit_store[client_ip]
+    # Remove expired entries
+    while attempts and attempts[0] < now - RATE_LIMIT_WINDOW:
+        attempts.popleft()
+    if len(attempts) >= RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Please try again in {RATE_LIMIT_WINDOW // 60} minutes.",
+        )
+    attempts.append(now)
+
+def _get_client_ip(request: Request) -> str:
+    return request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
 
 
 @router.get("/health")
@@ -224,6 +250,9 @@ def login(
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    client_ip = _get_client_ip(request)
+    _check_rate_limit(client_ip)
+
     candidate = db.query(Candidate).filter(Candidate.email == payload.email).first()
     if candidate and verify_password(payload.password, candidate.password):
         if password_needs_upgrade(candidate.password):

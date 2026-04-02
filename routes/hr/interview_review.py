@@ -20,6 +20,7 @@ import logging
 from collections import defaultdict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
@@ -31,6 +32,7 @@ from models import (
     InterviewSession, JobDescription, ProctorEvent, Result,
 )
 from routes.dependencies import require_role, SessionUser
+from services.pdf_report import generate_interview_pdf
 from services.pipeline import record_stage_change, stage_payload
 from services.scoring import build_application_score
 
@@ -740,3 +742,38 @@ def update_custom_questions(
     job.custom_questions = [q.strip() for q in payload.questions if q.strip()]
     db.commit()
     return {"ok": True, "custom_questions": job.custom_questions}
+
+ 
+ 
+
+
+# -- Feature: PDF Interview Report Export --
+@router.get("/interviews/{session_id}/report")
+def download_interview_report(
+    session_id: int,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+):
+    """Download a PDF interview report for HR review."""
+    session = (
+        db.query(InterviewSession)
+        .join(Result, InterviewSession.result_id == Result.id)
+        .join(JobDescription, Result.job_id == JobDescription.id)
+        .filter(
+            InterviewSession.id == session_id,
+            JobDescription.company_id == current_user.user_id,
+        )
+        .first()
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    pdf_buffer = generate_interview_pdf(session, db)
+    candidate = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
+    filename = f"interview_report_{candidate.name.replace(' ', '_') if candidate else 'unknown'}_{session_id}.pdf"
+
+    return StreamingResponse(
+        iter([pdf_buffer.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
