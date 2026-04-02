@@ -579,7 +579,7 @@ export default function Interview() {
 
   return (
     <div className="min-h-screen bg-slate-950 font-sans p-4 lg:p-6">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 page-enter">
 
         {/* ── LEFT — question + answer ───────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-4">

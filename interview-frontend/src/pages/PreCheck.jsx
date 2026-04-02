@@ -242,7 +242,7 @@ export default function PreCheck() {
   const allGranted = Object.values(checks).every((c) => c.status === "granted");
 
   return (
-    <div className="min-h-[calc(100vh-160px)] flex flex-col items-center justify-center py-12 px-4">
+    <div className="min-h-[calc(100vh-160px)] flex flex-col items-center justify-center py-12 px-4 page-enter">
       <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-2 gap-12">
 
         {/* Left: checks */}

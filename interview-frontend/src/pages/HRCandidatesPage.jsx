@@ -233,7 +233,7 @@ export default function HRCandidatesPage() {
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 page-enter">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">Candidate Directory</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Review ATS scores, assigned JDs, pipeline stages, recommendations, compare candidates, and apply bulk actions safely.</p>

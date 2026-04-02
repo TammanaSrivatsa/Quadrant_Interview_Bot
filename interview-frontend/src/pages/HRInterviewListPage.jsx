@@ -46,7 +46,7 @@ export default function HRInterviewListPage() {
   if (loading) return <p className="center muted">Loading interviews...</p>;
 
   return (
-    <div className="stack">
+    <div className="stack page-enter">
       <PageHeader
         title="Interview Reviews"
         subtitle="Review completed sessions, suspicious events, and finalize outcomes."
@@ -59,7 +59,7 @@ export default function HRInterviewListPage() {
 
       {error && <p className="alert error">{error}</p>}
 
-      <section className="metric-grid">
+      <section className="metric-grid page-enter-delay-1">
         <MetricCard label="Interviews" value={String(filteredRows.length)} hint="Current filtered sessions" />
         <MetricCard label="Completed" value={String(completedCount)} hint="Ready for final decision" />
         <MetricCard label="Suspicious events" value={String(suspiciousTotal)} hint="Across visible sessions" />

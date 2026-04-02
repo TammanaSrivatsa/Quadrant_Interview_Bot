@@ -223,7 +223,7 @@ export default function HRAnalyticsPage() {
       {error ? <p className="alert error">{error}</p> : null}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 page-enter">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">HR Analytics</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Recruitment health, candidate profile breakdown, and interview performance signals.</p>
@@ -255,7 +255,7 @@ export default function HRAnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Pipeline funnel */}
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 chart-card-accent blue">
           <div className="flex items-center gap-2 mb-2">
             <Target size={18} className="text-blue-600" />
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Pipeline Funnel</h3>
@@ -281,7 +281,7 @@ export default function HRAnalyticsPage() {
         </div>
 
         {/* Candidate profile — experience tier breakdown */}
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 chart-card-accent purple">
           <div className="flex items-center gap-2 mb-2">
             <Users size={18} className="text-purple-600" />
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Who Applied</h3>
@@ -303,7 +303,7 @@ export default function HRAnalyticsPage() {
         </div>
 
         {/* Skill insights */}
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 chart-card-accent yellow">
           <div className="flex items-center gap-2 mb-2">
             <Zap size={18} className="text-amber-500" />
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Skill Health</h3>

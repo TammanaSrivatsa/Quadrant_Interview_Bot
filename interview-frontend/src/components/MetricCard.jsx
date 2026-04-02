@@ -21,9 +21,9 @@ export default function MetricCard({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:shadow-md">
+    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-hover-lift">
       <div className="flex justify-between items-start">
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{heading}</p>
           <h3 className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{value}</h3>
 
@@ -44,8 +44,18 @@ export default function MetricCard({
           {!trend && hint ? (
             <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">{hint}</p>
           ) : null}
+
+          {/* Mini score bar for percentage values */}
+          {String(value).includes("%") && (
+            <div className="score-bar mt-3">
+              <div
+                className={`score-bar-fill ${color}`}
+                style={{ width: `${Math.min(parseInt(value, 10) || 0, 100)}%` }}
+              />
+            </div>
+          )}
         </div>
-        <div className={`p-3 rounded-lg ${colorClasses[color]}`}>
+        <div className={`p-3 rounded-lg ${colorClasses[color]} ml-4 shrink-0`}>
           {Icon && <Icon size={24} />}
         </div>
       </div>

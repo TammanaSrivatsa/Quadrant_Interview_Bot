@@ -10,9 +10,9 @@ import { hrApi } from "../services/api";
 const CHART_COLORS = ["#2563eb", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#06b6d4"];
 const EMPTY_LIST = [];
 
-function ChartCard({ title, subtitle, children }) {
+function ChartCard({ title, subtitle, accent, children }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+    <div className={`bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden ${accent ? `chart-card-accent ${accent}` : ""}`}>
       <div className="p-6 border-b border-slate-100 dark:border-slate-800">
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">{title}</h2>
         {subtitle ? <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{subtitle}</p> : null}
@@ -92,7 +92,7 @@ export default function HRDashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 page-enter">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">HR Dashboard</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Production-style ATS analytics, rankings, funnel health, and recent candidate activity.</p>
@@ -101,7 +101,7 @@ export default function HRDashboardPage() {
           <button type="button" onClick={() => navigate("/hr/compare")} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
             Compare Candidates
           </button>
-          <button type="button" onClick={() => navigate("/hr/candidates")} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none">
+          <button type="button" onClick={() => navigate("/hr/candidates")} className="bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-blue-900/30">
             <Plus size={20} />
             <span>Manage Candidates</span>
           </button>
@@ -110,7 +110,7 @@ export default function HRDashboardPage() {
 
       {error ? <p className="alert error">{error}</p> : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 page-enter-delay-1">
         <MetricCard title="Total Candidates" value={overview.total_candidates || 0} icon={Users} color="blue" />
         <MetricCard title="Shortlisted" value={overview.shortlisted_count || 0} icon={UserCheck} color="green" />
         <MetricCard title="Rejected" value={overview.rejected_count || 0} icon={UserX} color="red" />
@@ -119,14 +119,14 @@ export default function HRDashboardPage() {
         <MetricCard title="Interview Success" value={`${Math.round(Number(overview.interview_success_rate || 0))}%`} icon={TrendingUp} color="blue" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 page-enter-delay-2">
         <div className="lg:col-span-2 space-y-8">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            <ChartCard title="Hiring Funnel" subtitle="Applied → shortlisted → interview completed → selected">
+            <ChartCard title="Hiring Funnel" subtitle="Applied → shortlisted → interview completed → selected" accent="blue">
               {!chartReadyFunnel.length ? <p className="muted">No funnel data yet.</p> : <div className="ats-chart-box"><ResponsiveContainer width="100%" height="100%"><FunnelChart><Tooltip /><Funnel dataKey="value" data={chartReadyFunnel} isAnimationActive><LabelList position="right" fill="#64748b" stroke="none" dataKey="name" /></Funnel></FunnelChart></ResponsiveContainer></div>}
             </ChartCard>
 
-            <ChartCard title="Selection Quality" subtitle="Core ATS conversion indicators">
+            <ChartCard title="Selection Quality" subtitle="Core ATS conversion indicators" accent="purple">
               <div className="metric-grid compact">
                 <MetricCard title="Avg Score" value={`${Math.round(Number(overview.avg_interview_score || 0))}%`} icon={BarChart3} color="purple" />
                 <MetricCard title="Selection Rate" value={`${Math.round(Number(overview.selection_rate || 0))}%`} icon={Sparkles} color="blue" />
@@ -136,27 +136,35 @@ export default function HRDashboardPage() {
             </ChartCard>
           </div>
 
-          <ChartCard title="Average Score per JD" subtitle="Compare ATS score trends across job descriptions">
+          <ChartCard title="Average Score per JD" subtitle="Compare ATS score trends across job descriptions" accent="green">
             {!chartReadyJdScores.length ? <p className="muted">No JD score data yet.</p> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#2563eb" /></BarChart></ResponsiveContainer></div>}
           </ChartCard>
 
           <ChartCard title="Top Ranked Candidates" subtitle="Final weighted ATS score sorted across current applications.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {!ranked.length ? <p className="text-sm text-slate-500 dark:text-slate-400">No ranked candidates yet.</p> : ranked.map((candidate) => (
-                <div key={candidate.result_id} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-bold text-slate-900 dark:text-white">#{candidate.rank || "-"} {candidate.name}</p>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{candidate.candidate_uid}</p>
+              {!ranked.length ? <p className="text-sm text-slate-500 dark:text-slate-400">No ranked candidates yet.</p> : ranked.map((candidate) => {
+                const score = Math.round(Number(candidate.finalAIScore || candidate.score || 0));
+                const scoreColor = score >= 80 ? "green" : score >= 65 ? "blue" : "red";
+                return (
+                  <div key={candidate.result_id} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 card-hover-lift">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-bold text-slate-900 dark:text-white">#{candidate.rank || "-"} {candidate.name}</p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{candidate.candidate_uid}</p>
+                      </div>
+                      <StatusBadge status={candidate.stage || candidate.status} />
                     </div>
-                    <StatusBadge status={candidate.stage || candidate.status} />
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2">
+                        <p className="text-slate-400 text-xs uppercase font-bold">Final Score</p>
+                        <p className="font-black text-blue-600 mt-0.5">{score}%</p>
+                        <div className="score-bar mt-2"><div className={`score-bar-fill ${scoreColor}`} style={{ width: `${score}%` }} /></div>
+                      </div>
+                      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2"><p className="text-slate-400 text-xs uppercase font-bold">Recommendation</p><p className="font-bold text-slate-900 dark:text-white mt-0.5">{candidate.recommendationTag || "N/A"}</p></div>
+                    </div>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2"><p className="text-slate-400 text-xs uppercase font-bold">Final Score</p><p className="font-black text-blue-600">{Math.round(Number(candidate.finalAIScore || candidate.score || 0))}%</p></div>
-                    <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2"><p className="text-slate-400 text-xs uppercase font-bold">Recommendation</p><p className="font-bold text-slate-900 dark:text-white">{candidate.recommendationTag || "N/A"}</p></div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </ChartCard>
 
@@ -166,7 +174,7 @@ export default function HRDashboardPage() {
         </div>
 
         <div className="space-y-8">
-          <ChartCard title="Pipeline Breakdown" subtitle="Stage-wise application distribution">
+          <ChartCard title="Pipeline Breakdown" subtitle="Stage-wise application distribution" accent="yellow">
             <div className="space-y-4">
               {pipeline.map((item) => (
                 <div key={item.key} className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
@@ -184,14 +192,20 @@ export default function HRDashboardPage() {
 
           <ChartCard title="Recommendation Highlights" subtitle="Top AI-recommended applications">
             <div className="space-y-4">
-              {(dashboard?.analytics?.top_ranked_candidates || []).length ? dashboard.analytics.top_ranked_candidates.map((item) => (
-                <div key={item.result_id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                  <p className="font-bold text-slate-900 dark:text-white">{item.candidate_name}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{item.job_title || "JD"}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{item.recommendation || "N/A"}</p>
-                  <p className="text-xs font-black text-blue-600 mt-2">{Math.round(Number(item.final_score || 0))}%</p>
-                </div>
-              )) : <p className="text-sm text-slate-500 dark:text-slate-400">No recommendation highlights yet.</p>}
+              {(dashboard?.analytics?.top_ranked_candidates || []).length ? dashboard.analytics.top_ranked_candidates.map((item) => {
+                const score = Math.round(Number(item.final_score || 0));
+                return (
+                  <div key={item.result_id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 card-hover-lift">
+                    <p className="font-bold text-slate-900 dark:text-white">{item.candidate_name}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{item.job_title || "JD"}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{item.recommendation || "N/A"}</p>
+                    <div className="mt-3 flex items-center gap-3">
+                      <p className="text-xs font-black text-blue-600">{score}%</p>
+                      <div className="score-bar flex-1"><div className={`score-bar-fill ${score >= 80 ? "green" : score >= 65 ? "blue" : "red"}`} style={{ width: `${score}%` }} /></div>
+                    </div>
+                  </div>
+                );
+              }) : <p className="text-sm text-slate-500 dark:text-slate-400">No recommendation highlights yet.</p>}
             </div>
           </ChartCard>
         </div>

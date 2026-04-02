@@ -99,7 +99,7 @@ export default function Completed() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans">
-      <div className="max-w-4xl w-full text-center space-y-8">
+      <div className="max-w-4xl w-full text-center space-y-8 page-enter">
         <div className="relative inline-block">
           <div className="w-24 h-24 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-[32px] flex items-center justify-center mx-auto relative z-10 shadow-xl shadow-emerald-100 dark:shadow-none">
             <CheckCircle2 size={48} />
@@ -140,10 +140,10 @@ export default function Completed() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="card"><p className="eyebrow">Answered</p><h3>{summary?.answered_count ?? "-"}</h3><p className="muted">Out of {summary?.total_questions ?? "-"}</p></div>
-          <div className="card"><p className="eyebrow">Interview score</p><h3>{Math.round(Number(interviewSummary?.overall_interview_score || 0))}%</h3><p className="muted">Overall response quality</p></div>
-          <div className="card"><p className="eyebrow">Communication</p><h3>{Math.round(Number(interviewSummary?.communication_score || 0))}%</h3><p className="muted">Clarity and confidence</p></div>
-          <div className="card"><p className="eyebrow">Recommendation</p><h3>{interviewSummary?.hiring_recommendation || "Under Review"}</h3><p className="muted">Current ATS recommendation</p></div>
+          <div className="card card-hover-lift"><p className="eyebrow">Answered</p><h3>{summary?.answered_count ?? "-"}</h3><p className="muted">Out of {summary?.total_questions ?? "-"}</p></div>
+          <div className="card card-hover-lift"><p className="eyebrow">Interview score</p><h3>{Math.round(Number(interviewSummary?.overall_interview_score || 0))}%</h3><div className="score-bar mt-3"><div className={`score-bar-fill ${Math.round(Number(interviewSummary?.overall_interview_score || 0)) >= 80 ? "green" : Math.round(Number(interviewSummary?.overall_interview_score || 0)) >= 65 ? "blue" : "yellow"}`} style={{ width: `${Math.min(Math.round(Number(interviewSummary?.overall_interview_score || 0)), 100)}%` }} /></div><p className="muted">Overall response quality</p></div>
+          <div className="card card-hover-lift"><p className="eyebrow">Communication</p><h3>{Math.round(Number(interviewSummary?.communication_score || 0))}%</h3><div className="score-bar mt-3"><div className={`score-bar-fill ${Math.round(Number(interviewSummary?.communication_score || 0)) >= 80 ? "green" : Math.round(Number(interviewSummary?.communication_score || 0)) >= 65 ? "blue" : "yellow"}`} style={{ width: `${Math.min(Math.round(Number(interviewSummary?.communication_score || 0)), 100)}%` }} /></div><p className="muted">Clarity and confidence</p></div>
+          <div className="card card-hover-lift"><p className="eyebrow">Recommendation</p><h3>{interviewSummary?.hiring_recommendation || "Under Review"}</h3><p className="muted">Current ATS recommendation</p></div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
