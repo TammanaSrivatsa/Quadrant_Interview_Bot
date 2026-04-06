@@ -9,7 +9,7 @@ import { cn } from "../utils/utils";
 
 // PHASE 1 FIX: Removed redundant "Skill Weights" link — that functionality
 // is now fully handled inside JD Management (edit JD → update weights).
-export default function Sidebar() {
+export default function Sidebar({ isOpen = true, onClose }) {
   const { user, logout } = useAuth();
   const isHR = user?.role === "hr";
 
@@ -34,7 +34,7 @@ export default function Sidebar() {
   const links = isHR ? hrLinks : candidateLinks;
 
   return (
-    <aside className="w-64 h-screen bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed left-0 top-0 z-50">
+    <aside className={`w-64 h-screen bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
       <div className="p-6">
         <div className="flex items-center space-x-2">
           <div className="bg-blue-600 p-1.5 rounded-lg">
@@ -51,6 +51,7 @@ export default function Sidebar() {
             key={link.path}
             to={link.path}
             end={link.path === "/hr" || link.path === "/candidate"}
+            onClick={() => onClose?.()}
             className={({ isActive }) =>
               cn(
                 "flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all font-medium text-sm",

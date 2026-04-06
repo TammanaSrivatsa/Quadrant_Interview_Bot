@@ -80,11 +80,7 @@ export default function Completed() {
     setFeedbackSubmitting(true);
     setFeedbackError("");
     try {
-      await fetch(`/api/interview/${sessionId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-        body: JSON.stringify({ rating: feedbackRating, comment: feedbackComment }),
-      });
+      await interviewApi.submitFeedback(Number(sessionId), { rating: feedbackRating, comment: feedbackComment });
       setFeedbackSubmitted(true);
     } catch {
       setFeedbackError("Could not submit feedback. Please try again.");

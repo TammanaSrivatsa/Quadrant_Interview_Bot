@@ -36,7 +36,6 @@ function HomeRedirect() {
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
-  console.log("user details: ", user);
   if (!user) return <Navigate to="/login" replace />;
   return <Navigate to={user.role === "hr" ? "/hr" : "/candidate"} replace />;
 }
