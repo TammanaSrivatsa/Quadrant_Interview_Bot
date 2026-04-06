@@ -7,9 +7,6 @@ import { hrApi } from "../services/api";
 import { ATS_STAGE_DEFINITIONS as PIPELINE_STAGES, normalizeStageKey } from "../utils/stages";
 
 const STAGE_ICONS = {
-  applied: UserPlus,
-  screening: Users,
-  shortlisted: UserCheck,
   interview_scheduled: Calendar,
   interview_completed: CheckCircle,
   selected: CheckCircle,
