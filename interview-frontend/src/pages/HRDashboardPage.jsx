@@ -126,7 +126,7 @@ export default function HRDashboardPage() {
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <ChartCard title="Hiring Funnel" subtitle="Applied → shortlisted → interview completed → selected" accent="blue">
-              {!chartReadyFunnel.length ? <p className="muted">No funnel data yet.</p> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyFunnel} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="value" fill="#2563eb" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div>}
+              {!chartReadyFunnel.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No funnel data yet</div> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyFunnel} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="value" fill="#2563eb" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div>}
             </ChartCard>
 
             <ChartCard title="Selection Quality" subtitle="Core ATS conversion indicators" accent="purple">
@@ -140,12 +140,12 @@ export default function HRDashboardPage() {
           </div>
 
           <ChartCard title="Average Score per JD" subtitle="Compare ATS score trends across job descriptions" accent="green">
-            {!chartReadyJdScores.length ? <p className="muted">No JD score data yet.</p> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#10b981" /></BarChart></ResponsiveContainer></div>}
+            {!chartReadyJdScores.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No JD score data</div> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#10b981" /></BarChart></ResponsiveContainer></div>}
           </ChartCard>
 
           <ChartCard title="Top Ranked Candidates" subtitle="Final weighted ATS score sorted across current applications.">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {!ranked.length ? <p className="text-sm text-slate-500 dark:text-slate-400">No ranked candidates yet.</p> : ranked.map((candidate) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
+              {!ranked.length ? <div className="col-span-2 text-center py-8 text-slate-500 dark:text-slate-400">No ranked candidates yet</div> : ranked.map((candidate) => {
                 const score = Math.round(Number(candidate.finalAIScore || candidate.score || 0));
                 const scoreColor = score >= 80 ? "green" : score >= 65 ? "blue" : "red";
                 return (
@@ -174,23 +174,25 @@ export default function HRDashboardPage() {
 
         <div className="space-y-6">
           <ChartCard title="Pipeline Breakdown" subtitle="Stage-wise application distribution" accent="yellow">
-            <div className="space-y-3">
-              {pipeline.map((item) => (
+            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+              {pipeline.length ? pipeline.map((item) => (
                 <div key={item.key} className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
                   <div className="flex items-center gap-2"><StatusBadge status={item} /><span className="text-sm text-slate-500 dark:text-slate-400">{item.label}</span></div>
                   <span className="text-sm font-bold text-slate-900 dark:text-white">{item.count}</span>
                 </div>
-              ))}
+              )) : <div className="text-center py-8 text-slate-500 dark:text-slate-400">No pipeline data</div>}
             </div>
           </ChartCard>
 
           <ChartCard title="Top Skills Distribution" subtitle="Most frequently matched skills across current candidates">
-            {!chartReadySkills.length ? <p className="muted">No skill trends yet.</p> : <div className="ats-chart-box"><ResponsiveContainer width="100%" height="100%"><PieChart><Tooltip /><Pie data={chartReadySkills} dataKey="count" nameKey="skill" outerRadius={80} innerRadius={40}>{chartReadySkills.map((entry) => <Cell key={entry.skill} fill={entry.fill} />)}</Pie></PieChart></ResponsiveContainer></div>}
-            {chartReadySkills.length ? <div className="space-y-2 mt-3">{chartReadySkills.map((item) => <div key={item.skill} className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/40 px-3 py-2"><span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.skill}</span><span className="text-sm font-bold text-slate-900 dark:text-white">{item.count}</span></div>)}</div> : null}
+            {!chartReadySkills.length ? <div className="text-center py-8 text-slate-500 dark:text-slate-400">No skill data</div> : <>
+              <div className="ats-chart-box"><ResponsiveContainer width="100%" height="100%"><PieChart><Tooltip /><Pie data={chartReadySkills} dataKey="count" nameKey="skill" outerRadius={80} innerRadius={40}>{chartReadySkills.map((entry) => <Cell key={entry.skill} fill={entry.fill} />)}</Pie></PieChart></ResponsiveContainer></div>
+              <div className="space-y-2 mt-3 max-h-[200px] overflow-y-auto pr-2">{chartReadySkills.map((item) => <div key={item.skill} className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/40 px-3 py-2"><span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.skill}</span><span className="text-sm font-bold text-slate-900 dark:text-white">{item.count}</span></div>)}</div>
+            </>}
           </ChartCard>
 
           <ChartCard title="Recommendation Highlights" subtitle="Top AI-recommended applications">
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
               {(dashboard?.analytics?.top_ranked_candidates || []).length ? dashboard.analytics.top_ranked_candidates.map((item) => {
                 const score = Math.round(Number(item.final_score || 0));
                 return (
@@ -204,28 +206,7 @@ export default function HRDashboardPage() {
                     </div>
                   </div>
                 );
-              }) : <p className="text-sm text-slate-500 dark:text-slate-400">No recommendation highlights yet.</p>}
-            </div>
-          </ChartCard>
-
-          <ChartCard title="Quick Actions" subtitle="Common HR tasks">
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => navigate("/hr/candidates")} className="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-all text-left">
-                <p className="text-sm font-bold text-blue-700 dark:text-blue-400">View All Candidates</p>
-                <p className="text-xs text-blue-500 dark:text-blue-500 mt-1">Browse candidate pool</p>
-              </button>
-              <button onClick={() => navigate("/hr/interviews")} className="p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/40 transition-all text-left">
-                <p className="text-sm font-bold text-green-700 dark:text-green-400">View Interviews</p>
-                <p className="text-xs text-green-500 dark:text-green-500 mt-1">See scheduled interviews</p>
-              </button>
-              <button onClick={() => navigate("/hr/jds")} className="p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-all text-left">
-                <p className="text-sm font-bold text-purple-700 dark:text-purple-400">Manage JDs</p>
-                <p className="text-xs text-purple-500 dark:text-purple-500 mt-1">Job descriptions</p>
-              </button>
-              <button onClick={() => navigate("/hr/compare")} className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all text-left">
-                <p className="text-sm font-bold text-amber-700 dark:text-amber-400">Compare</p>
-                <p className="text-xs text-amber-500 dark:text-amber-500 mt-1">Side-by-side view</p>
-              </button>
+              }) : <div className="text-center py-8 text-slate-500 dark:text-slate-400">No recommendations yet</div>}
             </div>
           </ChartCard>
         </div>
