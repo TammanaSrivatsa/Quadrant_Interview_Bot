@@ -271,6 +271,7 @@ def upload_resume(
         score,
         explanation,
         cutoff_score=float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
+        job=selected_jd,
     )
 
     questions = _generate_result_question_bank(result=result, resume_text=resume_text, job=selected_jd)

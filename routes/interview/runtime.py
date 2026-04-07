@@ -2032,6 +2032,8 @@ def interview_answer(
 
             communication_score=float(interview_summary.get("communication_score") or 0.0),
 
+            weights_json=job.score_weights_json if job and hasattr(job, 'score_weights_json') and job.score_weights_json else None,
+
         )
 
         result.final_score = float(result.score_breakdown_json["final_weighted_score"])

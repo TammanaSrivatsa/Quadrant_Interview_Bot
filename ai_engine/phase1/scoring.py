@@ -11,6 +11,8 @@ from ai_engine.phase1.matching import (
     extract_academic_percentages,
     extract_education,
     extract_experience,
+    extract_education_llm,
+    extract_experience_llm,
 )
 
 SKILL_ALIASES: dict[str, list[str]] = {
@@ -305,8 +307,13 @@ def compute_resume_scorecard(
     experience_requirement: int = 0,
     semantic_similarity: float | None = None,
     min_academic_percent: float = 0.0,
+    use_llm: bool = True,
 ) -> dict[str, object]:
-    """Build a stable explainable resume scorecard with a 0-100 final score."""
+    """Build a stable explainable resume scorecard with a 0-100 final score.
+    
+    Args:
+        use_llm: If True, uses LLM for experience/education detection (default True)
+    """
 
     resume_text = resume_text or ""
     jd_text = jd_text or ""
@@ -323,7 +330,7 @@ def compute_resume_scorecard(
         academic_cutoff_reason,
     ) = _academic_cutoff_status(resume_text, min_academic_percent)
 
-    detected_experience_years = max(0, int(extract_experience(resume_text)))
+    detected_experience_years = max(0, int(extract_experience_llm(resume_text) if use_llm else extract_experience(resume_text)))
     required_years = max(0, int(experience_requirement or 0))
     if required_years == 0:
         experience_score = 100.0
@@ -335,7 +342,7 @@ def compute_resume_scorecard(
         else:
             experience_reason = f"Required {required_years} years, found {detected_experience_years}."
 
-    detected_education_level = _normalize_education(extract_education(resume_text))
+    detected_education_level = _normalize_education(extract_education_llm(resume_text) if use_llm else extract_education(resume_text))
     required_education_level = _normalize_education(education_requirement)
     required_education_rank = _education_rank(required_education_level)
     detected_education_rank = _education_rank(detected_education_level)

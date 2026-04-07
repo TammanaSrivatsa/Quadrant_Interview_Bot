@@ -8,6 +8,16 @@ export const ATS_STAGE_DEFINITIONS = [
 export const ATS_STAGE_KEYS = ATS_STAGE_DEFINITIONS.map((stage) => stage.key);
 export const ATS_STAGE_OPTIONS = ATS_STAGE_DEFINITIONS.map((stage) => ({ value: stage.key, label: stage.label }));
 
+export const STATUS_MAP = new Map([
+  ["applied", { key: "applied", label: "Applied", tone: "secondary" }],
+  ["screening", { key: "screening", label: "Screening", tone: "warning" }],
+  ["shortlisted", { key: "shortlisted", label: "Shortlisted", tone: "success" }],
+  ["interview_scheduled", { key: "interview_scheduled", label: "Scheduled", tone: "primary" }],
+  ["interview_completed", { key: "interview_completed", label: "Completed", tone: "dark" }],
+  ["selected", { key: "selected", label: "Selected", tone: "success" }],
+  ["rejected", { key: "rejected", label: "Rejected", tone: "danger" }],
+]);
+
 export function normalizeStageKey(value, fallback = "applied") {
   const key = String(value || "").trim().toLowerCase();
   return ATS_STAGE_KEYS.includes(key) ? key : fallback;

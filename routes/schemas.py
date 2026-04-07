@@ -78,9 +78,9 @@ class HrJDCreateBody(BaseModel):
     min_academic_percent: float = Field(default=0.0, ge=0, le=100)
     total_questions: int = Field(default=8, ge=2, le=50)
     project_question_ratio: float = Field(default=0.8, ge=0.0, le=1.0)
+    score_weights_json: dict[str, float] | None = Field(default=None, description="Custom weights for final score calculation: {resume: 0.35, skills: 0.25, interview: 0.25, communication: 0.15}")
 
 
-# NOTE: Partial-update schema aligned to the existing frontend JD form.
 class HrJDUpdateBody(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=200)
     jd_text: str | None = Field(default=None, min_length=10)
@@ -92,6 +92,7 @@ class HrJDUpdateBody(BaseModel):
     min_academic_percent: float | None = Field(default=None, ge=0, le=100)
     total_questions: int | None = Field(default=None, ge=2, le=50)
     project_question_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    score_weights_json: dict[str, float] | None = Field(default=None, description="Custom weights for final score calculation")
 
 
 class CandidateSelectJDBody(BaseModel):

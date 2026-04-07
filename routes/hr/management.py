@@ -236,6 +236,7 @@ def _serialize_jd(jd: JobDescription) -> dict[str, object]:
         "project_question_ratio": float(jd.project_question_ratio if jd.project_question_ratio is not None else 0.8),
         "is_active": bool(jd.is_active if jd.is_active is not None else True),
         "created_at": jd.created_at,
+        "score_weights_json": jd.score_weights_json,
     }
 
 
@@ -275,6 +276,7 @@ def hr_create_jd(
         question_count=int(payload.total_questions),
         project_question_ratio=float(payload.project_question_ratio),
         is_active=True,
+        score_weights_json=payload.score_weights_json,
     )
     db.add(jd)
     db.commit()
@@ -343,6 +345,8 @@ def hr_update_jd(
         jd.question_count = jd.total_questions
     if payload.project_question_ratio is not None:
         jd.project_question_ratio = float(payload.project_question_ratio)
+    if payload.score_weights_json is not None:
+        jd.score_weights_json = payload.score_weights_json
 
     db.commit()
     db.refresh(jd)

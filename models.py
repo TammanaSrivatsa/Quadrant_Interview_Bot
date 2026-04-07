@@ -86,6 +86,11 @@ class JobDescription(Base):
     education_requirement = Column(String(50), nullable=True)
     experience_requirement = Column(Integer, default=0, nullable=False)
     custom_questions = Column(JSON, nullable=True)
+    
+    # Configurable scoring weights for final application score
+    # Default: resume=0.35, skills=0.25, interview=0.25, communication=0.15
+    score_weights_json = Column(JSON, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     company = relationship("HR", back_populates="jobs")

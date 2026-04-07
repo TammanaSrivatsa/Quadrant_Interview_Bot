@@ -9,320 +9,298 @@
 ## 2. Tech Stack
 
 ### Frontend
-- **React 19**
-- **Vite**
-- **React Router**
-- **Axios**
-- UI helper libraries like **lucide-react**, **clsx**, **tailwind-merge**
+- **React 19** with Vite
+- **React Router** for navigation
+- **Axios** for API calls
+- UI helpers: **lucide-react**, **clsx**, **tailwind-merge**
+- **Tailwind CSS** for styling
 
 ### Backend
-- **FastAPI**
-- **Python**
+- **FastAPI** (Python)
 - **SQLAlchemy ORM**
 - **Pydantic** for request validation
-- **Starlette session middleware** for session-cookie auth
+- **Starlette** session middleware for auth
+- **PostgreSQL** (default) / SQLite (optional)
 
-### Database
-- **SQLite** by default (`app.db` / local DB)
-- Schema handled through SQLAlchemy models plus startup backfill logic in `main.py`
-
-### AI / LLM Usage
-- **Groq API** for:
+### AI / LLM
+- **Cerebras** (primary) or Groq/OpenAI for:
   - JD skill extraction
-  - answer evaluation
-  - transcription / Whisper support
+  - Answer evaluation (LLM)
+  - Transcription (needs API key)
+- **Sentence Transformers** for semantic similarity
 - Local deterministic logic for:
-  - resume scoring
-  - question fallback generation
-  - answer rubric scoring when LLM is unavailable
-- Resume/JD analysis logic is organized in `ai_engine/phase1`, `phase2`, and `phase3`
+  - Resume scoring fallback
+  - Answer rubric scoring
+- Resume/JD analysis in `ai_engine/phase1`, `phase2`, `phase3`
+
+---
 
 ## 3. High-Level Workflow
 
 ### End-to-end flow
-- **HR creates JD**
-  - HR uploads or creates a job description
-  - JD skills and weights are stored
-- **Candidate uploads resume**
-  - Resume file is uploaded to backend storage
-  - Resume text is extracted
-- **Resume screening happens**
-  - Resume is matched against JD
-  - Skills, education, academics, and similarity are scored
-  - Candidate is shortlisted or rejected
-- **Interview is scheduled**
-  - Shortlisted candidate selects an interview date
-  - Interview link is generated and email can be sent
-- **Questions are generated**
-  - Resume + JD are used to create an interview question bank
-  - Questions are stored in the result/interview context
-- **Interview runs**
-  - Candidate starts interview session
-  - Questions are served one by one
-  - Candidate submits answers by text or transcription
-- **Evaluation happens**
-  - Answers are scored locally and/or with LLM help
-  - HR can review answers, scores, and proctoring data
-  - HR finalizes selected/rejected decision
+```
+HR creates JD → Candidate uploads resume → Resume scored → Interview scheduled 
+→ Questions generated → Interview runs → Answers evaluated → HR reviews & decides
+```
+
+1. **HR creates JD**
+   - HR uploads or creates job description
+   - JD skills and weights are stored
+   - Custom scoring weights can be set per JD
+
+2. **Candidate uploads resume**
+   - Resume file uploaded to backend storage
+   - Resume text extracted (PDF/DOCX/TXT)
+   - Resume scored against JD (AI + rules)
+
+3. **Resume screening**
+   - Resume matched against JD
+   - Skills, education, experience, similarity scored
+   - Candidate shortlisted or rejected
+
+4. **Interview scheduled**
+   - Shortlisted candidate selects interview date
+   - Interview link generated
+
+5. **Questions generated**
+   - Resume + JD used to create question bank
+   - Questions stored in result/interview context
+
+6. **Interview runs**
+   - Candidate starts interview session
+   - Questions served one by one
+   - Text or voice answers submitted
+
+7. **Evaluation happens**
+   - Answers scored locally and/or with LLM
+   - Final weighted score calculated
+   - HR reviews and finalizes decision
+
+---
 
 ## 4. Backend Structure
 
 ### `routes/`
-- Contains all API endpoints
-- Split by domain:
-  - `routes/auth/` → login, signup, profile, password, health
-  - `routes/candidate/` → dashboard, JD selection, resume upload, practice kit
-  - `routes/hr/` → JD management, candidate management, interview review
-  - `routes/interview/` → start interview, submit answers, transcription, evaluation, proctoring runtime
-- `routes/api_routes.py` combines all route groups under `/api`
+- `routes/auth/` → Login, signup, profile, password, health
+- `routes/candidate/` → Dashboard, JD selection, resume upload, practice
+- `routes/hr/` → JD management, candidate management, interview review
+- `routes/interview/` → Start, answer, transcription, evaluation, proctoring
+- `routes/api_routes.py` → Combines all under `/api`
 
 ### `services/`
-- Contains reusable business helpers
-- Examples:
-  - `services/llm/client.py` → Groq-based AI calls
-  - `services/practice.py` → practice question kit
-  - `services/resume_advice.py` → resume advice generation
-  - `services/hr_dashboard.py` → HR dashboard aggregation
-  - `services/jd_sync.py` → syncs JD config and legacy job records
+- `services/llm/client.py` → LLM API calls
+- `services/scoring.py` → Weighted scoring logic
+- `services/practice.py` → Practice question kit
+- `services/hr_dashboard.py` → Dashboard aggregation
+
+### `ai_engine/phase1/`
+- `scoring.py` → Resume & answer scoring
+- `matching.py` → Semantic matching, extraction
+- `question_builder.py` → Question generation
 
 ### `models.py`
-- Contains SQLAlchemy database models
-- Main tables/entities:
-  - `Candidate`
-  - `HR`
-  - `JobDescription`
-  - `JobDescriptionConfig`
-  - `Result`
-  - `InterviewSession`
-  - `InterviewQuestion`
-  - `InterviewAnswer`
-  - `ProctorEvent`
+- Candidate, HR, JobDescription, Result
+- InterviewSession, InterviewQuestion, InterviewAnswer
+- ProctorEvent
 
-## 5. Key APIs (IMPORTANT)
+---
+
+## 5. Key APIs
 
 ### `/api/auth/*`
-- `POST /api/auth/signup`
-  - Register candidate or HR user
-- `POST /api/auth/login`
-  - Login and create session
-- `POST /api/auth/logout`
-  - Clear session
-- `GET /api/auth/me`
-  - Return logged-in user info
-- `PUT /api/auth/profile`
-  - Update display name/company name
-- `POST /api/auth/change-password`
-  - Change password after verifying current password
-- `GET /api/health/groq`
-  - Check whether Groq services are reachable
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth/signup` | POST | Register candidate or HR |
+| `/auth/login` | POST | Login and create session |
+| `/auth/logout` | POST | Clear session |
+| `/auth/me` | GET | Get current user |
+| `/auth/profile` | PUT | Update profile |
+| `/auth/change-password` | POST | Change password |
+| `/auth/forgot-password` | POST | Request password reset |
+| `/auth/reset-password` | POST | Reset with token |
 
 ### `/api/hr/*`
-- `POST /api/hr/jds`
-  - Create JD config
-- `GET /api/hr/jds`
-  - List HR-owned JDs
-- `PUT /api/hr/jds/{jd_id}`
-  - Update JD settings like weights, score cutoff, question count
-- `POST /api/hr/upload-jd`
-  - Upload JD file and extract initial skills
-- `POST /api/hr/confirm-jd`
-  - Confirm JD and score candidates against it
-- `POST /api/hr/update-skill-weights`
-  - Update JD skill weights and recalculate scores
-- `GET /api/hr/dashboard`
-  - HR dashboard with jobs, shortlisted candidates, analytics
-- `GET /api/hr/candidates`
-  - Candidate manager list
-- `GET /api/hr/candidates/{candidate_uid}`
-  - Candidate detail page
-- `POST /api/hr/candidate/{candidate_id}/generate-questions`
-  - Generate interview questions for a candidate
-- `GET /api/hr/interviews`
-  - List interview sessions
-- `GET /api/hr/interviews/{interview_id}`
-  - View interview detail, answers, and events
-- `POST /api/hr/interviews/{interview_id}/finalize`
-  - Final HR decision and score
-- `POST /api/hr/interviews/{interview_id}/re-evaluate`
-  - Re-trigger AI evaluation
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/hr/dashboard` | GET | HR dashboard metrics |
+| `/hr/jds` | GET/POST | List/Create JDs |
+| `/hr/jds/:jd_id` | GET/PUT | JD details/Update |
+| `/hr/candidates` | GET | List candidates |
+| `/hr/candidates/:uid` | GET | Candidate detail |
+| `/hr/candidates/compare` | POST | Compare candidates |
+| `/hr/interviews` | GET | List interviews |
+| `/hr/interviews/:id` | GET | Interview detail |
+| `/hr/interviews/:id/finalize` | POST | HR final decision |
+| `/hr/interviews/:id/re-evaluate` | POST | Re-run LLM evaluation |
+| `/hr/proctoring/:session_id` | GET | Proctoring timeline |
 
 ### `/api/candidate/*`
-- `GET /api/candidate/dashboard`
-  - Candidate dashboard summary
-- `GET /api/candidate/jds`
-  - List active JDs
-- `POST /api/candidate/select-jd`
-  - Candidate chooses target JD
-- `POST /api/candidate/upload-resume`
-  - Upload resume, score it, and prepare question bank
-- `GET /api/candidate/skill-match/{job_id}`
-  - View matched and missing skills
-- `POST /api/candidate/select-interview-date`
-  - Schedule interview date
-- `GET /api/candidate/practice-kit`
-  - Generate practice questions
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/candidate/dashboard` | GET | Candidate dashboard |
+| `/candidate/jds` | GET | List active JDs |
+| `/candidate/select-jd` | POST | Select target JD |
+| `/candidate/upload-resume` | POST | Upload & score resume |
+| `/candidate/select-interview-date` | POST | Schedule interview |
+| `/candidate/practice-kit` | GET | Practice questions |
 
 ### `/api/interview/*`
-- `POST /api/interview/start`
-  - Start interview session and return first question
-- `POST /api/interview/answer`
-  - Submit one answer and return next question
-- `POST /api/interview/transcribe`
-  - Convert recorded audio to text
-- `POST /api/interview/{session_id}/evaluate`
-  - Evaluate answers after interview
-- `POST /proctor/frame`
-  - Upload webcam frame for proctoring checks
-- `POST /api/interview/{token}/event`
-  - Store interview-related events
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/interview/:result_id/access` | GET | Check access |
+| `/interview/start` | POST | Start session |
+| `/interview/answer` | POST | Submit answer |
+| `/interview/transcribe` | POST | Audio to text |
+| `/interview/:session_id/evaluate` | POST | Run LLM evaluation |
+| `/proctor/frame` | POST | Upload webcam frame |
 
-## 6. Question Generation Logic
+---
 
-- Main logic is in `ai_engine/phase2/question_builder.py`
-- The system reads:
-  - resume text
-  - JD title
-  - JD skill weights
-- It extracts structured project information such as:
-  - project name
-  - summary
-  - tech stack
-  - notable features
-  - implementation details
-  - candidate contribution
-- It then builds questions in two ways:
-  - **LLM path** → uses Groq API with strong prompt instructions
-  - **deterministic fallback** → uses local templates and structured project data
-- The logic prefers:
-  - real project names
-  - JD-relevant skills
-  - implementation/depth-based questions instead of generic textbook questions
-- If LLM fails or no API key is available:
-  - fallback question generation still works
-  - question format stays consistent
+## 6. Scoring System (Complete)
 
-## 7. Interview Flow (VERY IMPORTANT)
+### Phase 1: Resume Scoring (0-100)
+| Component | Weight | Source |
+|-----------|--------|--------|
+| Skill Match | 50% | JD skills found in resume |
+| Semantic | 15% | AI (sentence-transformers) |
+| Experience | 15% | Years detected vs required |
+| Education | 10% | Bachelor/Master/PhD match |
+| Academic | 5% | Percentage threshold |
+| Quality | 5% | Resume structure |
+
+### Phase 2: Answer Scoring (Per Answer: 0-100)
+| Dimension | Weight | Description |
+|-----------|--------|-------------|
+| Relevance | 40% | Q&A overlap + JD skills |
+| Completeness | 25% | Word count + action verbs |
+| Clarity | 20% | Vocabulary diversity |
+| Time Fit | 15% | Time management |
+
+### Phase 3: LLM Evaluation
+- Batch evaluates all answers using LLM
+- Falls back to local scoring if unavailable
+
+### Phase 4: Final Weighted Score (0-100)
+**Default:**
+```
+final = resume*0.35 + skills*0.25 + interview*0.25 + communication*0.15
+```
+
+**Custom weights** can be set per JD via `score_weights_json`
+
+### Recommendations
+| Score | Recommendation |
+|-------|----------------|
+| ≥80 | Strong Hire |
+| ≥65 | Hire |
+| ≥50 | Weak |
+| <50 | Reject |
+
+---
+
+## 7. Question Generation Logic
+
+- **Location**: `ai_engine/phase2/question_builder.py`
+- Reads: resume text, JD title, JD skill weights
+- Extracts project info: name, summary, tech stack, features
+- **Two paths**:
+  - LLM path → uses Cerebras/Groq API
+  - Deterministic fallback → local templates
+- Prefers real project names and JD-relevant skills
+
+---
+
+## 8. Interview Flow
 
 ### How interview starts
-- Candidate hits `POST /api/interview/start`
-- Backend checks:
-  - candidate session
-  - result availability
-  - consent/proctoring readiness
-- If no active interview session exists:
-  - new `InterviewSession` row is created
-- First question is loaded from the stored question bank
+1. Candidate hits `POST /api/interview/start`
+2. Backend validates session, result, consent
+3. Creates `InterviewSession` if none exists
+4. Returns first question from stored bank
 
-### How questions are stored
-- Question bank is generated during resume upload / interview preparation
-- Questions are stored in `Result.interview_questions`
-- During runtime, each served question is inserted into `InterviewQuestion`
-- Runtime question metadata includes:
-  - text
-  - topic
-  - difficulty
-  - question type
-  - focus skill
-  - project name
-  - reference answer
+### Questions stored
+- Generated during resume upload
+- Stored in `Result.interview_questions`
+- Runtime questions in `InterviewQuestion`
 
-### How answers are submitted
-- Candidate submits to `POST /api/interview/answer`
-- Backend validates:
-  - `session_id`
-  - `question_id`
-  - question belongs to current session
-  - question is not already answered
-- Then it:
-  - stores/updates `InterviewAnswer`
-  - updates matching `InterviewQuestion`
-  - computes local summary and score
-  - reduces remaining time
-  - returns next question if available
+### Answer submission
+1. Candidate submits to `POST /api/interview/answer`
+2. Validates session, question ownership
+3. Stores `InterviewAnswer`, updates `InterviewQuestion`
+4. Computes local score, returns next question
 
-### When interview is marked completed
-- Interview is completed when:
-  - no more valid questions remain, or
-  - max question count is reached, or
-  - total remaining time becomes 0
-- Then backend sets:
-  - `session.status = "completed"`
-  - `session.llm_eval_status = "pending"`
+### Interview completion
+- When: no questions left OR max reached OR time = 0
+- Sets: `session.status = "completed"`, `llm_eval_status = "pending"`
 
-## 8. Problems Faced (IMPORTANT FOR INTERVIEW)
+---
 
-### Question generation issues
-- Problem:
-  - questions were too generic
-  - used wording like “main project” instead of actual project names
-- Fix:
-  - extracted structured project data from resume
-  - forced question generation to use real project names and stack
-  - improved LLM prompt and deterministic fallback
+## 9. Database Models
 
-### API 401 issues
-- Problem:
-  - session-based auth can fail if cookie/session is missing
-- Fix:
-  - consistent session middleware usage
-  - role-based guards in route dependencies
-  - `/api/auth/me` and health endpoints help debug auth state
+### Core Tables
+| Model | Purpose |
+|-------|---------|
+| Candidate | Job seeker users |
+| HR | Recruiter users |
+| JobDescription | Job postings with skills/weights |
+| Result | Application state & scores |
+| InterviewSession | Interview instance |
+| InterviewQuestion | Questions in session |
+| InterviewAnswer | Candidate answers |
+| ProctorEvent | Webcam/screen events |
 
-### API 500 issues
-- Problem:
-  - interview answer flow crashed when question bank got exhausted
-- Fix:
-  - runtime was updated to handle exhausted bank safely
-  - instead of throwing 500, interview now completes cleanly
+### Score Storage
+- `Result.score` → Resume screening score
+- `Result.final_score` → Final weighted score
+- `Result.explanation` → Resume scorecard JSON
+- `Result.score_breakdown_json` → Full breakdown
+- `Result.recommendation` → "Hire"/"Reject"
 
-### Session bugs
-- Problem:
-  - mismatch between question generation output and runtime expectations
-  - repeated answer submission could create race conditions
-- Fix:
-  - runtime checks question/session ownership carefully
-  - already-answered cases are handled better
-  - next-question generation now fails gracefully
+---
 
-### Data consistency issues
-- Problem:
-  - HR decision data was mixed into JSON blobs
-- Fix:
-  - moved HR review data into dedicated database columns
-  - reduced silent overwrite/data-loss risk
+## 10. Features & Improvements Made
 
-## 9. Improvements (for discussion)
+### Recent Improvements
+1. **Configurable JD weights** - Custom scoring weights per JD
+2. **LLM resume parsing** - Experience/education detection via LLM
+3. **LLM answer scoring** - Better evaluation using AI
+4. **Candidate page optimization** - More concise UI
+5. **Database column** - Added `score_weights_json` column
 
-- Better AI question quality with richer resume parsing
-- More intelligent follow-up questions based on previous answer quality
-- Stronger answer scoring with hybrid rubric + LLM ranking
-- Better project extraction for messy resumes
-- Better proctoring analytics and dashboard visuals
-- Async background jobs for heavy AI operations
-- PostgreSQL + Redis for production scale
-- Docker-based deployment
-- Role-based audit logs and admin monitoring
-- Exportable interview reports as PDF
+### Known Limitations
+- **Microphone transcription** - Needs `GROQ_API_KEY` or `OPENAI_API_KEY`
+- **Frontend lint warnings** - Pre-existing unused variables (cosmetic)
 
-## 10. How to Run Project
+---
+
+## 11. How to Run
 
 ### Backend
-- Create environment and install dependencies:
-  - `pip install -r requirements.txt`
-- Run backend:
-  - `python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000`
+```bash
+cd interview_bot_project_1-main
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
 ### Frontend
-- Move to frontend folder:
-  - `cd interview-frontend`
-- Install dependencies:
-  - `npm install`
-- Run frontend:
-  - `npm run dev`
+```bash
+cd interview-frontend
+npm install
+npm run dev
+```
 
-## Interview-Ready Short Explanation
+### Environment Variables (.env)
+```
+LLM_PROVIDER=cerebras
+LLM_API_KEY=your_key
+DATABASE_URL=postgresql://...
+```
 
-- I built an **AI-based interview platform** for HR and candidates.
-- HR can create JDs, screen candidates, generate technical interview questions, run interviews, and review results.
-- The backend is in **FastAPI**, frontend is in **React**, and AI is used for **skill extraction, question generation, transcription, and answer evaluation**.
-- One key part I worked on was improving **resume-based question generation** and fixing **runtime interview flow bugs** like question-bank exhaustion and answer submission failures.
+---
+
+## 12. Interview-Ready Short Explanation
+
+> I built an **AI-powered interview platform** for HR and candidates. HR creates job descriptions, candidates upload resumes which get scored against the JD using AI. Shortlisted candidates schedule interviews where AI generates personalized technical questions based on their resume. During the interview, answers are evaluated locally and with LLM. HR then reviews all scores, proctoring data, and makes hiring decisions. The backend is FastAPI, frontend is React, and AI is used for skill extraction, question generation, transcription, and answer evaluation.
+
+---
+
+*Last Updated: April 2026*

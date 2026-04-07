@@ -329,6 +329,7 @@ def upsert_result(
     explanation: dict[str, object],
     interview_questions: list[dict[str, str]] | None = None,
     cutoff_score: float = 65.0,
+    job=None,
 ) -> Result:
     score_cutoff_met = score >= float(cutoff_score)
     academic_cutoff_met = bool(explanation.get("academic_cutoff_met", True))
@@ -336,6 +337,11 @@ def upsert_result(
 
     explanation["score_cutoff_met"] = score_cutoff_met
     explanation["shortlist_eligible"] = shortlisted
+    
+    weights_json = None
+    if job and hasattr(job, 'score_weights_json') and job.score_weights_json:
+        weights_json = job.score_weights_json
+    
     current = (
         db.query(Result)
         .filter(Result.candidate_id == candidate_id, Result.job_id == job_id)
@@ -347,6 +353,7 @@ def upsert_result(
         skills_match_score=float(explanation.get("matched_percentage") or 0.0),
         interview_score=0.0,
         communication_score=0.0,
+        weights_json=weights_json,
     )
     target_stage = "shortlisted" if shortlisted else ("screening" if score is not None else "applied")
 
