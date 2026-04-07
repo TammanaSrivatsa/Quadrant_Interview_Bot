@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, Download, RefreshCw, ChevronLeft, ChevronRight, Eye, ArrowUpDown, GitCompareArrows, Calendar, CheckCircle, XCircle, Layers } from "lucide-react";
+import { Search, Download, RefreshCw, ChevronLeft, ChevronRight, Eye, ArrowUpDown, GitCompareArrows, Calendar, CheckCircle, XCircle } from "lucide-react";
 import StatusBadge from "../components/StatusBadge";
 import ScoreBadge from "../components/ScoreBadge";
 import { hrApi } from "../services/api";
@@ -21,15 +21,6 @@ function normalizeId(value) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-function ApplicationCountBadge({ count, onClick }) {
-  if (count <= 1) return null;
-  return (
-    <button type="button" onClick={onClick} className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors">
-      <Layers size={12} />{count} apps
-    </button>
-  );
-}
-
 export default function HRCandidatesPage() {
   const navigate = useNavigate();
   const [allCandidates, setAllCandidates] = useState([]);
@@ -48,8 +39,6 @@ export default function HRCandidatesPage() {
   const [bulkStage, setBulkStage] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalCandidate, setModalCandidate] = useState(null);
 
   const loadAllCandidates = useCallback(async () => {
     setLoading(true);
@@ -326,10 +315,9 @@ export default function HRCandidatesPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
-                <th className="px-4 py-3 text-[10px] text-slate-400 uppercase tracking-widest font-black"></th>
+                <th className="px-2 py-3 text-[10px] text-slate-400 uppercase tracking-widest font-black w-10">#</th>
                 <th className="px-4 py-3 text-[10px] text-slate-400 uppercase tracking-widest font-black">Candidate</th>
                 <th className="px-4 py-3 text-[10px] text-slate-400 uppercase tracking-widest font-black">Email</th>
-                <th className="px-4 py-3 text-[10px] text-slate-400 uppercase tracking-widest font-black">Apps</th>
                 <th className="px-4 py-3 min-w-[90px]"><SortButton column="resumeScore" label="Match %" sortKey={sortConfig.key} onSort={requestSort} /></th>
                 <th className="px-4 py-3 min-w-[90px]"><SortButton column="finalAIScore" label="Final Score" sortKey={sortConfig.key} onSort={requestSort} /></th>
                 <th className="px-4 py-3 text-[10px] text-slate-400 uppercase tracking-widest font-black">Stage</th>
@@ -337,20 +325,32 @@ export default function HRCandidatesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-              {!paginatedCandidates.length ? <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">No candidates found.</td></tr> : paginatedCandidates.map((candidate) => {
+              {!paginatedCandidates.length ? <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">No candidates found.</td></tr> : paginatedCandidates.map((candidate, index) => {
                 const resultId = normalizeId(candidate?.result_id);
                 const compareSelectable = Boolean(resultId);
                 const compareChecked = compareSelectable && selectedForCompare.includes(resultId);
                 const candidateName = candidate?.name || "Unnamed candidate";
                 const candidateUid = candidate?.candidate_uid || "No ID";
                 const candidateEmail = candidate?.email || "No email";
-                const appCount = candidate?.application_count || 1;
-                const openModal = () => {
-                  setModalCandidate(candidate);
-                  setModalOpen(true);
-                };
+                const serialNumber = (safePage - 1) * itemsPerPage + index + 1;
                 return <tr key={candidateUid} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-all group">
-                  <td className="px-4 py-3"><input type="checkbox" checked={compareChecked} onChange={() => toggleCompareSelection(candidate)} disabled={!compareSelectable || (!compareChecked && selectedForCompare.length >= 3)} /></td>
+                  <td className="px-2 py-3">
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={compareChecked} 
+                        onChange={() => toggleCompareSelection(candidate)} 
+                        disabled={!compareSelectable || (!compareChecked && selectedForCompare.length >= 3)}
+                        className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                      />
+                      <span 
+                        onClick={() => compareSelectable && toggleCompareSelection(candidate)}
+                        className={compareSelectable ? "text-xs font-bold text-slate-400 dark:text-slate-500 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 select-none min-w-[20px]" : "text-xs font-bold text-slate-300 dark:text-slate-600"}
+                      >
+                        {serialNumber}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{candidateName}</p>
@@ -358,7 +358,6 @@ export default function HRCandidatesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 truncate max-w-[200px]">{candidateEmail}</td>
-                  <td className="px-4 py-3"><ApplicationCountBadge count={appCount} onClick={openModal} /></td>
                   <td className="px-4 py-3"><ScoreBadge score={candidate?.matchPercent || 0} /></td>
                   <td className="px-4 py-3"><ScoreBadge score={candidate?.finalAIScore || 0} /></td>
                   <td className="px-4 py-3"><StatusBadge status={candidate?.interviewStatus} /></td>
@@ -388,26 +387,6 @@ export default function HRCandidatesPage() {
           </div>
         </div>
       </div>
-
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setModalOpen(false); setModalCandidate(null); }}>
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{modalCandidate?.name}</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{modalCandidate?.email}</p>
-              </div>
-              <button type="button" onClick={() => { setModalOpen(false); setModalCandidate(null); }} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">✕</button>
-            </div>
-            <div className="p-5 overflow-y-auto max-h-[60vh]">
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">All Applications</p>
-              <div className="text-center py-8 text-slate-500 dark:text-slate-400">
-                Click "View" to see full application details
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
