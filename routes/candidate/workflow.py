@@ -203,6 +203,7 @@ def upload_resume(
     current_user: SessionUser = Depends(require_role("candidate")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    logger.info(f"UPLOAD_RESUME_START candidate_id={current_user.user_id} filename={resume.filename}")
     candidate = get_candidate_or_404(db, current_user.user_id)
     profile_changed = ensure_candidate_profile(candidate, db)
     safe_filename = Path(resume.filename or "resume").name
@@ -220,16 +221,23 @@ def upload_resume(
     if file_size > 5_000_000:
         raise HTTPException(status_code=400, detail="Resume file exceeds 5MB limit")
 
-
+    logger.info(f"UPLOAD_RESUME saving file for candidate_id={candidate.id}")
     resume_path = UPLOAD_DIR / f"resume_{candidate.id}_{uuid.uuid4().hex}_{safe_filename}"
-    with resume_path.open("wb") as buffer:
-        shutil.copyfileobj(resume.file, buffer)
+    logger.info(f"UPLOAD_RESUME filepath={resume_path}")
+    try:
+        with resume_path.open("wb") as buffer:
+            shutil.copyfileobj(resume.file, buffer)
+        logger.info(f"UPLOAD_RESUME file saved successfully")
+    except Exception as e:
+        logger.error(f"UPLOAD_RESUME file save FAILED: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
 
     candidate.resume_path = str(resume_path)
     if profile_changed:
         db.add(candidate)
     db.commit()
     db.refresh(candidate)
+    logger.info(f"UPLOAD_RESUME resume_path saved to DB: {candidate.resume_path}")
 
     selected_jd_id = job_id or candidate.selected_jd_id
     if not selected_jd_id:
@@ -240,7 +248,14 @@ def upload_resume(
     db.commit()
     db.refresh(candidate)
 
-    score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
+    logger.info(f"UPLOAD_RESUME calling evaluate_resume_for_job")
+    try:
+        score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
+        logger.info(f"UPLOAD_RESUME evaluation done, score={score}")
+    except Exception as e:
+        logger.error(f"UPLOAD_RESUME evaluation FAILED: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Resume evaluation failed: {str(e)}")
+    
     resume_text = (candidate.resume_text or "").strip()
     logger.info(
         "resume_upload_extracted candidate_id=%s file_path=%s text_len=%d stored_in_db=%s",
