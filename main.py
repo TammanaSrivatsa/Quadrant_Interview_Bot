@@ -12,12 +12,8 @@ FIXES applied:
      missing so engineers catch it immediately instead of seeing 500 errors
      during interviews.
 """
-from __future__ import annotations
-from dotenv import load_dotenv
-# Load .env for local dev only — NEVER override real platform env vars on Render.
-load_dotenv()
+from core.config import config
 import logging
-import os
 import threading
 from pathlib import Path
 
@@ -93,9 +89,9 @@ _run_migrations()
 # ── LLM provider startup checks ─────────────────────────────────────────────
 
 # Standardized LLM provider and model checks
-_llm_provider = os.getenv("LLM_PROVIDER", "cerebras").strip().lower()
-_llm_model = os.getenv("LLM_MODEL_PRIMARY", "qwen-3-235b-a22b-instruct-2507").strip()
-_llm_api_key = os.getenv("LLM_API_KEY")
+_llm_provider = config.LLM_PROVIDER
+_llm_model = config.LLM_MODEL_PRIMARY
+_llm_api_key = config.LLM_API_KEY
 
 logger.info(f"LLM provider is {_llm_provider} with model={_llm_model}")
 
@@ -128,16 +124,15 @@ async def _preload_ml_model() -> None:
 
 
 # ── Environment & Production Safety ──────────────────────────────────────────
-IS_PROD = os.getenv("ENV", "development").strip().lower() == "production"
+IS_PROD = config.ENV == "production"
 logger.info(f"STARTUP: mode={'PRODUCTION' if IS_PROD else 'DEVELOPMENT'}")
 
-_secret_key = os.getenv("SECRET_KEY")
-if not _secret_key:
+_secret_key = config.SECRET_KEY
+if not _secret_key or _secret_key == "2e7c1b7e8a9f4c2d8b1a6e5f3c4d7a8b9e0f1c2b3a4d5e6f7b8c9d0e1f2a3b4c":
     if IS_PROD:
         raise RuntimeError("SECRET_KEY MUST be set in production via environment variables.")
     else:
-        logger.warning("SECRET_KEY not set. Using insecure default for local development.")
-        _secret_key = "dev-secret-key-12345"
+        logger.warning("SECRET_KEY not set or using default. Using fallback for local development.")
 
 app.add_middleware(
     SessionMiddleware,
@@ -149,14 +144,8 @@ app.add_middleware(
 
 # ── CORS Configuration ───────────────────────────────────────────────────────
 # LOCAL DEV: Uses Vite proxy -> http://127.0.0.1:8000 (no CORS needed for proxy)
-# PRODUCTION: Update CORS_ORIGINS env var or DEFAULT_ORIGINS below
-# - For AWS CloudFront: add your cloudfront URL
-# - For Vercel: add your vercel.app URL
-# DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://your-domain.com"
-DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://dfuwgnqei5yls.cloudfront.net"
-# DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://interview-bot-project-1.vercel.app,https://dfuwgnqei5yls.cloudfront.net"
-raw_origins = os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS)
-allow_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+# PRODUCTION: Update CORS_ORIGINS env var
+allow_origins = [o.strip() for o in config.CORS_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -167,8 +156,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-uploads_dir = Path("uploads")
-uploads_dir.mkdir(exist_ok=True)
+uploads_dir = config.UPLOAD_DIR
+uploads_dir.mkdir(exist_ok=True, parents=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 # NOTE: Mount the aggregate API router exactly once. Double-registration creates
 # duplicate/conflicting route entries and can surface as incorrect 404/405 behavior.

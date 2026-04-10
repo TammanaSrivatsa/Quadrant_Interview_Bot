@@ -15,9 +15,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from pathlib import Path
 from utils.token_utils import log_token_usage, get_snapshot
-from dotenv import load_dotenv
-
-load_dotenv()
+from core.config import config
 
 CACHE_DIR = Path(".cache")
 CACHE_DIR.mkdir(exist_ok=True)
@@ -53,16 +51,16 @@ def _clean_json(raw: str) -> str:
 
 @lru_cache(maxsize=1)
 def _resolve_llm_config() -> dict[str, Any]:
-    """Single source of truth for LLM configuration from .env only."""
-    provider = os.getenv("LLM_PROVIDER", "cerebras").strip().lower()
+    """Single source of truth for LLM configuration from global config."""
+    provider = config.LLM_PROVIDER
     
-    # Standardized environment variables
-    api_key = os.getenv("LLM_API_KEY", "").strip()
-    base_url = os.getenv("LLM_BASE_URL", "").strip()
-    primary_model = os.getenv("LLM_MODEL_PRIMARY", "").strip()
-    fallback_model = os.getenv("LLM_MODEL_FALLBACK", "").strip()
+    # Values from global config
+    api_key = config.LLM_API_KEY
+    base_url = config.LLM_BASE_URL
+    primary_model = config.LLM_MODEL_PRIMARY
+    fallback_model = config.LLM_MODEL_FALLBACK
     
-    # Provider-specific defaults if not provided in .env
+    # Provider-specific defaults if not provided in config
     if not primary_model:
         if provider == "cerebras": primary_model = "qwen-3-235b-a22b-instruct-2507"
         elif provider == "groq": primary_model = "llama-3.1-8b-instant"
@@ -79,7 +77,6 @@ def _resolve_llm_config() -> dict[str, Any]:
         elif provider == "groq": base_url = "https://api.groq.com/openai/v1"
         elif provider == "ollama": base_url = "http://localhost:11434/v1"
         elif provider == "openai": base_url = "https://api.openai.com/v1"
-        # Gemini usually requires its own adapter or a proxy
 
     return {
         "provider": provider,

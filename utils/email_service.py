@@ -3,10 +3,10 @@
 import os
 import smtplib
 from email.mime.text import MIMEText
-from dotenv import load_dotenv
+from core.config import config
 
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_SERVER = config.SMTP_SERVER
+SMTP_PORT = config.SMTP_PORT
 
 QUADRANT_SIGNATURE = """
 Best Regards,
@@ -24,9 +24,8 @@ An E-Verified Company
 
 def _send_generic_email(to_email, subject, body):
     """Internal helper to send a standardized email using Quadrant branding."""
-    load_dotenv()
-    email_address = os.getenv("EMAIL_ADDRESS")
-    email_password = os.getenv("EMAIL_PASSWORD")
+    email_address = config.EMAIL_ADDRESS
+    email_password = config.EMAIL_PASSWORD
     if not email_address or not email_password:
         raise ValueError("EMAIL_ADDRESS / EMAIL_PASSWORD is missing in environment.")
 

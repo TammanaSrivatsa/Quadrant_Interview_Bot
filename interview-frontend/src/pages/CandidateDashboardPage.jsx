@@ -7,7 +7,18 @@ import { candidateApi } from "../services/api";
 
 function routeFromInterviewLink(interviewLink) {
   if (!interviewLink) return "";
-  try { return new URL(interviewLink).pathname; } catch { return interviewLink; }
+  try {
+    const url = new URL(interviewLink);
+    let path = url.pathname;
+    if (url.hash && url.hash.startsWith("#/")) {
+      path = url.hash.replace(/^#/, "");
+    }
+    console.log("[ROUTE] interviewLink:", interviewLink, "-> route:", path);
+    return path;
+  } catch (e) {
+    console.log("[ROUTE] Error:", e.message);
+    return interviewLink;
+  }
 }
 
 function SkillMatchTable({ explanation, selectedJd }) {

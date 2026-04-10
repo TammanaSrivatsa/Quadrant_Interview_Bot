@@ -14,6 +14,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 from auth import hash_password, password_needs_upgrade, verify_password
+from core.config import config
 from database import get_db
 from models import Candidate, HR, PasswordResetToken, UserPreferences
 from routes.common import ensure_candidate_profile, get_candidate_or_404, get_hr_or_404
@@ -57,14 +58,11 @@ def health() -> dict[str, object]:
 @router.get("/health/llm")
 def llm_health() -> dict[str, object]:
     """Check configured LLM provider reachability without failing the endpoint."""
-    import os
-    import requests
-
-    provider = (os.getenv("LLM_PROVIDER") or "ollama").strip().lower()
+    provider = config.LLM_PROVIDER
 
     if provider == "ollama":
-        ollama_url = (os.getenv("OLLAMA_CHAT_URL") or "http://localhost:11434/api/chat").strip()
-        ollama_model = (os.getenv("OLLAMA_MODEL") or "qwen2.5-coder:3b").strip()
+        ollama_url = config.OLLAMA_CHAT_URL
+        ollama_model = config.OLLAMA_MODEL
         try:
             response = requests.post(
                 ollama_url,
@@ -96,7 +94,7 @@ def llm_health() -> dict[str, object]:
             }
 
     if provider == "groq":
-        api_key = os.getenv("GROQ_API_KEY", "")
+        api_key = config.GROQ_API_KEY
         if not api_key:
             return {
                 "ok": True,
@@ -339,11 +337,11 @@ def forgot_password(payload: ForgotPasswordBody, db: Session = Depends(get_db)) 
     db.add(reset_token)
     db.commit()
 
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    frontend_url = config.FRONTEND_URL.rstrip("/")
     reset_link = f"{frontend_url}/#/reset-password/{token}"
 
-    email_addr = os.getenv("EMAIL_ADDRESS", "")
-    email_pass = os.getenv("EMAIL_PASSWORD", "")
+    email_addr = config.EMAIL_ADDRESS
+    email_pass = config.EMAIL_PASSWORD
     if email_addr and email_pass:
         try:
             msg = MIMEText(f"Click this link to reset your password:\n{reset_link}\n\nThis link expires in 1 hour.")

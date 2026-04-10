@@ -3,12 +3,14 @@ from __future__ import annotations
 
 from datetime import datetime
 import os
+import re
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from core.config import config
 from ai_engine.phase1.scoring import compute_resume_scorecard
 from ai_engine.phase1.matching import extract_text_from_file
 from models import Candidate, HR, JobDescription, Result
@@ -16,18 +18,21 @@ from services.pipeline import normalize_stage, record_stage_change, stage_payloa
 from services.resume_parser import parse_resume_text
 from services.scoring import build_application_score
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = config.UPLOAD_DIR
+UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
 
 
 def frontend_base_url() -> str:
-    return os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    return config.FRONTEND_URL.rstrip("/")
 
 
 def interview_entry_url(result_id: int | None) -> str | None:
     if not result_id:
         return None
-    return f"{frontend_base_url()}/interview/{int(result_id)}"
+    base_url = frontend_base_url()
+    if "cloudfront.net" in base_url or "vercel.app" in base_url:
+        return f"{base_url}/#/interview/{int(result_id)}"
+    return f"{base_url}/interview/{int(result_id)}"
 
 
 def _latest_interview_session(result: Result | None):
@@ -268,6 +273,16 @@ def _load_jd_text(jd_text_value: str) -> str:
     if possible_path.is_file():
         return extract_text_from_file(raw)
     return raw
+
+
+def extract_min_academic_percent(requirement_text: str | None) -> float:
+    """Extract a minimum academic percentage from a requirement string (e.g. 'Min 60%')."""
+    if not requirement_text:
+        return 0.0
+    match = re.search(r"(\d{2,3}(?:\.\d+)?)\s*%", requirement_text)
+    if match:
+        return float(match.group(1))
+    return 0.0
 
 
 def evaluate_resume_for_job(
