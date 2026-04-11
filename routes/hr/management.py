@@ -34,6 +34,40 @@ from services.resume_advice import build_resume_advice
 
 router = APIRouter()
 jd_router = APIRouter(prefix="/hr/jds", tags=["hr-jds"])
+
+
+@router.get("/hr/resume/{candidate_uid}")
+def get_resume(candidate_uid: str, db: Session = Depends(get_db)):
+    """Serve the resume file for a candidate."""
+    candidate = db.query(Candidate).filter(Candidate.candidate_uid == candidate_uid).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if not candidate.resume_path:
+        raise HTTPException(status_code=404, detail="No resume has been uploaded for this candidate")
+    
+    from core.config import config
+    
+    base_upload_dir = Path(str(config.UPLOAD_DIR)).resolve()
+    path = Path(candidate.resume_path)
+    
+    if path.exists():
+        pass
+    elif not path.is_absolute():
+        filename = path.name.replace("\\", "/").split("/")[-1]
+        path = base_upload_dir / filename
+    
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Resume file not found on server. Path: {candidate.resume_path}")
+    
+    media_type = "application/pdf"
+    if path.suffix.lower() == ".docx":
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif path.suffix.lower() == ".doc":
+        media_type = "application/msword"
+    elif path.suffix.lower() == ".txt":
+        media_type = "text/plain"
+    
+    return FileResponse(path, media_type=media_type)
 # Keep FastAPI path params in plain `{jd_id}` form here. Using Starlette-style
 # converter syntax (`{jd_id:int}`) can produce route resolution mismatches across
 # versions and was breaking the frontend's /api/hr/jds/:id and toggle-active calls.
