@@ -1146,18 +1146,20 @@ def hr_delete_candidate(
             detail="Candidate has applications with another company and cannot be deleted from this HR panel.",
         )
 
-    safe_delete_upload(candidate.resume_path)
+    try:
+        safe_delete_upload(candidate.resume_path)
 
-    sessions = db.query(InterviewSession).filter(InterviewSession.candidate_id == candidate.id).all()
-    for session in sessions:
-        db.delete(session)
+        # 1) What this does: leverages SQLAlchemy cascades defined in models.py.
+        # 2) Why needed: automatically handles nested dependencies like answers and history.
+        # 3) How it works: deleting the candidate now triggers cascade delete on Results and Sessions.
+        db.delete(candidate)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger("uvicorn").error(f"[DELETE] Failed to delete candidate {candidate_uid}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error during deletion: {str(e)}")
 
-    results = db.query(Result).filter(Result.candidate_id == candidate.id).all()
-    for result in results:
-        db.delete(result)
-
-    db.delete(candidate)
-    db.commit()
     return {"ok": True, "message": "Candidate deleted", "candidate_uid": candidate_uid}
 
 

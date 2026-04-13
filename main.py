@@ -138,7 +138,6 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=_secret_key,
     same_site="none" if IS_PROD else "lax",
-    securecookie=IS_PROD,
     https_only=IS_PROD,
     session_cookie="interview_bot_sid",
 )

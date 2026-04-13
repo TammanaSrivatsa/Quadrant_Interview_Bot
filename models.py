@@ -46,8 +46,8 @@ class Candidate(Base):
     selected_jd_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=True, index=True)
 
-    results = relationship("Result", back_populates="candidate")
-    interviews = relationship("InterviewSession", back_populates="candidate")
+    results = relationship("Result", back_populates="candidate", cascade="all, delete-orphan")
+    interviews = relationship("InterviewSession", back_populates="candidate", cascade="all, delete-orphan")
     selected_jd = relationship("JobDescription", foreign_keys=[selected_jd_id])
     avatar_path = Column(String(300), nullable=True)
 
@@ -137,7 +137,7 @@ class Result(Base):
 
     candidate = relationship("Candidate", back_populates="results")
     job = relationship("JobDescription", back_populates="results")
-    sessions = relationship("InterviewSession", back_populates="result")
+    sessions = relationship("InterviewSession", back_populates="result", cascade="all, delete-orphan")
     stage_history = relationship("ApplicationStageHistory", cascade="all, delete-orphan")
 
 
@@ -202,7 +202,7 @@ class InterviewQuestion(Base):
     evaluation_json = Column(JSON, nullable=True)
 
     session = relationship("InterviewSession", back_populates="questions")
-    answers = relationship("InterviewAnswer", back_populates="question")
+    answers = relationship("InterviewAnswer", back_populates="question", cascade="all, delete-orphan")
 
 
 class InterviewAnswer(Base):
