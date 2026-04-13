@@ -48,6 +48,13 @@ class Config:
     raw_frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").strip()
     FRONTEND_URL = raw_frontend_url.replace(" ", "") if "https" in raw_frontend_url else raw_frontend_url
 
+    # ElevenLabs TTS Configuration (disabled - using browser TTS fallback)
+    # ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
+
+    # Supabase
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qgrslwklddrutxpnkgpy.supabase.co")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_XZKe_FBZHOtuJJQdMU23WA_NcdkNZSb")
+
     # Paths
     BASE_DIR = Path(__file__).resolve().parent.parent
     UPLOAD_DIR = BASE_DIR / "uploads"

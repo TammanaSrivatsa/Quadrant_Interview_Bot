@@ -42,9 +42,10 @@ This changelog summarizes the ATS-style upgrade implemented directly in this rep
 - API routers under: `routes/`
 
 ## Database
-- SQLite
+- PostgreSQL (EC2-installed)
 - ORM: SQLAlchemy
-- Safe backfill/init handled in `main.py -> ensure_schema()`
+- Connection: `postgresql://postgres:Srivatsa%402004@localhost:5432/interview_prod_db`
+- Migration: Safe column backfill/init handled in `main.py -> ensure_schema()` and `_run_migrations()`
 
 ---
 
@@ -429,23 +430,55 @@ Note:
 
 ---
 
-# 8. How to Run
+# 8. How to Run (EC2 Deployment Reference)
 
-## Backend
-From repo root:
-```powershell
-cd C:\Users\mohit\Downloads\phone\all\interview_bot_project_1-main
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload
+## 8.1 Current Instance Details
+- **Public IP**: `3.110.5.57`
+- **Private IP**: `172.31.39.173`
+- **SSH Command**: `ssh -i backend_interview.pem ubuntu@3.110.5.57`
+- **CloudFront**: `https://d2awu07vokgf4.cloudfront.net`
+
+## 8.2 Backend Lifecycle Management
+Connect to your instance:
+```bash
+cd /home/ubuntu/interview_bot_project_1
+source venv/bin/activate
 ```
 
-## Frontend
-```powershell
-cd C:\Users\mohit\Downloads\phone\all\interview_bot_project_1-main\interview-frontend
-npm install
-npm run dev
+**Start the service:**
+```bash
+# Load environment and start uvicorn in background
+python -c "from dotenv import load_dotenv; load_dotenv('.env')"
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
+```
+
+**Stop/Kill the service:**
+```bash
+# Gracefully find and kill the uvicorn process
+pkill -f uvicorn
+# OR by port
+fuser -k 8000/tcp
+```
+
+**Monitor Logs:**
+```bash
+tail -f backend.log
+```
+
+## 8.3 Database (PostgreSQL)
+```bash
+# Start/Restart Postgres
+sudo systemctl restart postgresql
+# Connect to production DB
+psql -h localhost -U postgres -d interview_prod_db
+```
+
+## 8.4 Frontend Deployment
+```bash
+cd interview-frontend
+npm run build
+# The build output (dist/) is uploaded to S3 bucket behind:
+# https://d2awu07vokgf4.cloudfront.net
 ```
 
 ---
@@ -500,8 +533,11 @@ npm run dev
    - per-answer evaluation
    - suspicious event summary
    - final decision form
-10. Open compare page
-11. Verify side-by-side comparison works
+## Production Verification
+1. Open https://dfuwgnqei5yls.cloudfront.net
+2. Login as candidate
+3. Verify API calls to `/api/*` correctly route through CloudFront to EC2 on port 8000.
+4. Verify database records are persisted in PostgreSQL.
 
 ---
 
@@ -531,3 +567,24 @@ npm run dev
 - No architecture switch was performed.
 - No project-wide overwrite was done.
 - Changes were applied incrementally and validated phase by phase.
+
+---
+
+# 12. Latest Fixes and Maintenance (2026-04-13)
+
+## 12.1 Frontend API Robustness
+Updated `interview-frontend/src/services/api.js`:
+- **Submit Answer Fix**: Renamed `answer` to `submitAnswer` to resolve "is not a function" error in `Interview.jsx`.
+- **Method Standardization**: Added `transcribe`, `logEvent`, `evaluate`, `sessionSummary`, and `submitFeedback` to `interviewApi` object.
+- **Improved Consistency**: These methods now use the centralized `request` helper, ensuring proper `baseURL` handling and error extraction.
+
+## 12.2 Interview Page Enhancements
+Updated `interview-frontend/src/pages/Interview.jsx`:
+- **Behavioral Event Logging**: Refactored paste detection to use `interviewApi.logEvent` instead of a hardcoded `fetch` call. This improves reliability and respects environment configuration.
+
+## 12.3 AI Voice (TTS) Maintenance
+Updated `services/tts_service.py`:
+- **Free Tier Support**: Switched ElevenLabs model from `eleven_monolingual_v1` (deprecated/paid-only) to `eleven_turbo_v2_5`.
+- **New Indian Voices**: Updated `VALID_VOICES` with new free-tier compatible Indian accent IDs (`oO7sLA3dWfQXsKeSAjpA` and `x3gYeuNB0kLLYxOZsaSh`).
+- **Success Criteria**: Restored high-quality voice output for candidates without requiring premium tier models.
+

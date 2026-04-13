@@ -14,49 +14,69 @@ import { useProctoring } from "../hooks/useProctoring";
 function useTTS() {
   const [muted, setMuted] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const audioRef = useRef(null);
 
-  const pickVoice = useCallback(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return null;
-    const voices = window.speechSynthesis.getVoices();
-    const priority = ["en-IN", "en-GB", "en-US"];
-    for (const lang of priority) {
-      const v = voices.find((v) => v.lang === lang);
-      if (v) return v;
+  const speak = useCallback(async (text, voiceType = "indian_female") => {
+    if (!text) return;
+    if (typeof window === "undefined") return;
+
+    if (muted) return;
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
     }
-    return voices.find((v) => v.lang.startsWith("en")) || null;
-  }, []);
 
-  const speak = useCallback((text) => {
-    if (!text || typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    try {
+      const { ttsApi } = await import("../services/api");
+      const response = await ttsApi.generate(text, voiceType);
+      if (response?.audio_url) {
+        setSpeaking(true);
+        const audio = new Audio(response.audio_url);
+        audioRef.current = audio;
+        audio.onended = () => setSpeaking(false);
+        audio.onerror = () => {
+          setSpeaking(false);
+          speakBrowserTTS(text, muted);
+        };
+        audio.play().catch(() => {
+          setSpeaking(false);
+          speakBrowserTTS(text, muted);
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn("[TTS] ElevenLabs failed, falling back to browser TTS:", e.message);
+    }
+
+    speakBrowserTTS(text, muted);
+  }, [muted]);
+
+  const speakBrowserTTS = useCallback((text, isMuted) => {
+    if (!text || typeof window === "undefined" || !window.speechSynthesis || isMuted) return;
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-IN";
     utterance.rate = 0.88;
     utterance.pitch = 1.05;
-    utterance.volume = muted ? 0 : 1;
-
-    const applyVoice = () => {
-      const voice = pickVoice();
-      if (voice) utterance.voice = voice;
-    };
+    utterance.volume = 1;
 
     utterance.onstart = () => setSpeaking(true);
-    utterance.onend   = () => setSpeaking(false);
+    utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
 
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        applyVoice();
-        window.speechSynthesis.speak(utterance);
-      };
-    } else {
-      applyVoice();
-      window.speechSynthesis.speak(utterance);
-    }
-  }, [muted, pickVoice]);
+    window.speechSynthesis.speak(utterance);
+  }, []);
 
   const stop = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
@@ -68,10 +88,16 @@ function useTTS() {
     setMuted((m) => !m);
   }, [stop]);
 
-  useEffect(() => () => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
   }, []);
 
   return { speak, stop, speaking, muted, toggleMute };
@@ -164,6 +190,11 @@ export default function Interview() {
   const [answerFeedback,  setAnswerFeedback]   = useState(null);
   const [proctorAlert,    setProctorAlert]     = useState("");
 
+  const selectedVoice = (() => {
+    const saved = sessionStorage.getItem(`interview-voice:${resultId}`);
+    return saved || "indian_female";
+  })();
+
   const videoRef             = useRef(null);
   const autoSubmittedRef     = useRef(false);
   const baselineCapturedRef  = useRef(false);
@@ -233,13 +264,13 @@ export default function Interview() {
     if (!currentQuestion?.text || loading || answerFeedback) return;
     if (muted) return;
     const timer = setTimeout(() => {
-      speak(currentQuestion.text);
+      speak(currentQuestion.text, selectedVoice);
     }, 700);
     return () => {
       clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentQuestion?.id]);
+  }, [currentQuestion?.id, selectedVoice]);
 
   useEffect(() => {
     if (isRecording || isSubmitting) stopSpeaking();
@@ -616,35 +647,27 @@ export default function Interview() {
                 <span className="hidden sm:inline">{muted ? "Voice Off" : "Voice On"}</span>
               </button>
 
-              {!answerFeedback && (
-                <div className="text-right hidden sm:block">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">This Q</p>
-                  <p className={cn("text-xl font-black font-mono",
-                    timeLeft < 20 ? "text-red-400 animate-pulse" : "text-slate-200")}>
-                    {formatTime(timeLeft)}
-                  </p>
-                </div>
-              )}
               <div className="text-right">
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total</p>
-                <p className="text-xl font-black font-mono text-slate-200">{formatTime(totalTimeLeft)}</p>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Time</p>
+                <p className={cn("text-xl font-black font-mono",
+                  totalTimeLeft < 60 ? "text-red-400 animate-pulse" : "text-slate-200")}>
+                  {formatTime(totalTimeLeft)}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* ⏲️ NEW: Question Progress Bar */}
-          {!answerFeedback && currentQuestion?.allotted_seconds > 0 && (
-            <div className="bg-slate-900/50 border border-slate-800/50 h-3 rounded-full overflow-hidden mb-2 relative">
-              <div 
-                className={cn(
-                  "h-full transition-all duration-1000 ease-linear",
-                  (timeLeft / currentQuestion.allotted_seconds) > 0.5 ? "bg-emerald-500" :
-                  (timeLeft / currentQuestion.allotted_seconds) > 0.2 ? "bg-amber-500" : "bg-red-500"
-                )}
-                style={{ width: `${Math.min(100, (timeLeft / currentQuestion.allotted_seconds) * 100)}%` }}
-              />
-            </div>
-          )}
+          {/* Total Time Progress Bar */}
+          <div className="bg-slate-900/50 border border-slate-800/50 h-3 rounded-full overflow-hidden mb-2 relative">
+            <div 
+              className={cn(
+                "h-full transition-all duration-1000 ease-linear",
+                (totalTimeLeft / totalTimeSeconds) > 0.5 ? "bg-emerald-500" :
+                (totalTimeLeft / totalTimeSeconds) > 0.2 ? "bg-amber-500" : "bg-red-500"
+              )}
+              style={{ width: `${Math.min(100, (totalTimeLeft / totalTimeSeconds) * 100)}%` }}
+            />
+          </div>
 
           {/* 🕵️ NEW: Proctoring Toast Alert */}
           {proctorAlert && (
@@ -668,7 +691,7 @@ export default function Interview() {
               </h2>
               <button
                 type="button"
-                onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "")}
+                onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "", selectedVoice)}
                 title={speaking ? "Stop" : "Read question aloud (Indian accent)"}
                 className={cn(
                   "flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border transition-all",
@@ -741,16 +764,11 @@ export default function Interview() {
                   if (pastedText.length > 10) {
                     const eventTargetId = resultId || sessionId;
                     if (eventTargetId) {
-                      fetch(`/api/interview/${eventTargetId}/event`, {
-                        method: "POST",
-                        credentials: "include",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          event_type: "paste_detected",
-                          detail: `Candidate pasted ${pastedText.length} characters`,
-                          timestamp: new Date().toISOString(),
-                          meta: { length: pastedText.length },
-                        }),
+                      interviewApi.logEvent(eventTargetId, {
+                        event_type: "paste_detected",
+                        detail: `Candidate pasted ${pastedText.length} characters`,
+                        timestamp: new Date().toISOString(),
+                        meta: { length: pastedText.length },
                       }).catch(() => {});
                     }
                   }

@@ -54,6 +54,8 @@ from routes.schemas import InterviewAnswerBody, InterviewEventBody, InterviewSta
 
 from routes.interview.evaluation import run_evaluation_task
 
+from services.supabase_storage import upload_proctoring_image
+
 from utils.proctoring_cv import analyze_frame, compare_signatures, should_store_periodic
 
 
@@ -1254,6 +1256,7 @@ def _compose_start_response(
         "time_limit_seconds": int((question.allotted_seconds if question else 0) or 0),
 
         "remaining_total_seconds": int(session.remaining_time_seconds or session.total_time_seconds or 1200),
+        "total_time_seconds": int(session.total_time_seconds or 1200),
 
         "consent_given": bool(session.consent_given),
 
@@ -2925,10 +2928,15 @@ def upload_proctor_frame(
 
 
     payload_out["stored"] = True
-
     payload_out["event_id"] = event.id
-
     payload_out["image_url"] = f"/uploads/{relative_path}"
+
+    try:
+        supabase_result = upload_proctoring_image(session.id, file)
+        if supabase_result.get("ok"):
+            payload_out["supabase_url"] = supabase_result.get("url")
+    except Exception as e:
+        logger.warning(f"Supabase proctoring upload failed: {e}")
 
     return payload_out
 

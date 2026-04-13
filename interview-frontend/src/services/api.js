@@ -256,9 +256,17 @@ export const interviewApi = {
   start: (payload) => request({ method: "post", url: "/interview/start", data: payload }),
   submitAnswer: (payload) => request({ method: "post", url: "/interview/answer", data: payload }),
   transcribe: (formData) => request({ method: "post", url: "/interview/transcribe", data: formData }),
+  logEvent: (targetId, payload) => request({ method: "post", url: `/interview/${targetId}/event`, data: payload }),
   evaluate: (sessionId) => request({ method: "post", url: `/interview/${sessionId}/evaluate` }),
   sessionSummary: (sessionId) => request({ method: "get", url: `/interview/session/${sessionId}/summary` }),
   submitFeedback: (sessionId, payload) => request({ method: "post", url: `/interview/${sessionId}/feedback`, data: payload }),
+  startSession: (resultId) => request({ method: "get", url: "/interview/start", params: resultId ? { result_id: resultId } : undefined }),
+  getSessions: () => request({ method: "get", url: "/interview/sessions" }),
+  getEvents: (sessionId) => request({ method: "get", url: "/interview/events", params: { session_id: sessionId } }),
+};
+
+export const ttsApi = {
+  generate: (question, voice) => request({ method: "post", url: "/interview/tts", data: { question, voice } }),
 };
 
 export const proctorApi = {
@@ -270,3 +278,4 @@ export const proctorApi = {
     return request({ method: "post", url: "/proctor/frame", data: formData });
   },
 };
+
