@@ -1,6 +1,8 @@
 import axios from "axios";
 import { toStatusObject } from "../utils/stages";
 import { uploadFileToS3 } from "../utils/s3Upload";
+
+const configuredBaseUrl = String(import.meta.env?.VITE_API_BASE_URL || "/api").trim();
 const baseURL = configuredBaseUrl === "/" ? "/api" : configuredBaseUrl.replace(/\/+$/, "");
 
 console.log("[API] VITE_API_BASE_URL:", import.meta.env?.VITE_API_BASE_URL);
@@ -177,15 +179,15 @@ export const candidateApi = {
   dashboard: (jobId) => request({ method: "get", url: "/candidate/dashboard", params: jobId ? { job_id: jobId } : undefined }),
   jds: () => request({ method: "get", url: "/candidate/jds" }),
   selectJd: (jdId) => request({ method: "post", url: "/candidate/select-jd", data: { jd_id: jdId } }),
-  uploadResume: async (file, jobId, onProgress) => {
+  uploadResume: async (file, jobId) => {
     try {
       console.log("[UPLOAD] Starting resume upload to S3, file:", file?.name, "jobId:", jobId);
       
       // Step 1: Upload to S3
-      const s3Url = await uploadFileToS3(file, onProgress);
+      const s3Url = await uploadFileToS3(file);
       console.log("[UPLOAD] S3 upload success:", s3Url);
 
-      // Step 2: Send S3 URL to backend for processing
+      // Step 2: Send S3 URL to backend
       return request({ 
         method: "post", 
         url: "/candidate/upload-resume-s3", 

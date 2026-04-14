@@ -177,7 +177,11 @@ def health() -> dict[str, str]:
 
 @app.get("/usage")
 def usage() -> dict:
+    from utils.token_utils import get_snapshot
+    snap = get_snapshot()
     return {
-        "status": "ok",
-        "message": "Token tracking disabled"
+        "provider": _llm_provider,
+        "model": _llm_model,
+        **snap,
+        "status": "ok" if snap["rpm_pct"] < 90 and snap["tpm_pct"] < 90 else "near_limit",
     }

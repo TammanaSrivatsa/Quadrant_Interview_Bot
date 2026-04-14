@@ -14,7 +14,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from pathlib import Path
-from utils.token_utils import log_token_usage
+from utils.token_utils import log_token_usage, get_snapshot
 from core.config import config
 
 CACHE_DIR = Path(".cache")
@@ -122,6 +122,20 @@ class OpenAIAdapter:
             logger.info(f"CACHE_HIT: model={model}")
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=_llm_cache[cache_key]))])
 
+        # Budget check before making the request
+        budget = get_snapshot()
+        if budget.get("blocked"):
+            logger.error("LLM request BLOCKED: daily token budget exceeded (%s%%)", budget["budget_pct"])
+            raise RuntimeError(
+                f"Daily LLM token budget exceeded ({budget['budget_pct']}% used). "
+                f"Remaining: {budget['budget_remaining']} tokens."
+            )
+
+        throttle_delay = budget.get("throttle_delay", 0)
+        if throttle_delay > 0:
+            logger.warning("LLM throttling: sleeping %ss due to %s%% budget usage", throttle_delay, budget["budget_pct"])
+            time.sleep(throttle_delay)
+
         url = f"{self.base_url}/chat/completions"
         payload = {
             "model": model,
@@ -148,24 +162,10 @@ class OpenAIAdapter:
                 resp = _session.post(url, json=payload, headers=headers, timeout=120)
 
             if resp.status_code != 200:
-                logger.error(f"LLM API Error ({resp.status_code}): {resp.text[:500] if resp.text else 'empty response'}")
+                logger.error(f"LLM API Error ({resp.status_code}): {resp.text}")
                 resp.raise_for_status()
 
-            # Check for empty response
-            if not resp.text or not resp.text.strip():
-                logger.error("LLM API returned empty response")
-                raise ValueError("Empty response from LLM API")
-
-            try:
-                data = resp.json()
-            except json.JSONDecodeError as e:
-                logger.error(f"LLM API returned invalid JSON: {e}, response: {resp.text[:200]}")
-                raise ValueError(f"Invalid JSON from LLM API: {e}")
-
-            if not data or "choices" not in data:
-                logger.error(f"LLM API response missing choices: {data}")
-                raise ValueError(f"Invalid LLM API response: {data}")
-
+            data = resp.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
             # Extract actual token counts from API response
