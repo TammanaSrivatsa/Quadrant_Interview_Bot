@@ -10,54 +10,28 @@ import { cn } from "../utils/utils";
 import AnswerFeedback from "../components/AnswerFeedback";
 import { useProctoring } from "../hooks/useProctoring";
 
-// ── TTS hook ──────────────────────────────────────────────────────────────────
+// ── Browser TTS hook ──────────────────────────────────────────────────────────
 function useTTS() {
   const [muted, setMuted] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const audioRef = useRef(null);
 
-  const speak = useCallback(async (text, voiceType = "indian_female") => {
+  const speak = useCallback((text, voiceType = "indian_female") => {
     if (!text) return;
     if (typeof window === "undefined") return;
 
     if (muted) return;
 
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
-
-    try {
-      const { ttsApi } = await import("../services/api");
-      const response = await ttsApi.generate(text, voiceType);
-      if (response?.audio_url) {
-        setSpeaking(true);
-        const audio = new Audio(response.audio_url);
-        audioRef.current = audio;
-        audio.onended = () => setSpeaking(false);
-        audio.onerror = () => {
-          setSpeaking(false);
-          speakBrowserTTS(text, muted);
-        };
-        audio.play().catch(() => {
-          setSpeaking(false);
-          speakBrowserTTS(text, muted);
-        });
-        return;
-      }
-    } catch (e) {
-      console.warn("[TTS] ElevenLabs failed, falling back to browser TTS:", e.message);
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
     }
 
-    speakBrowserTTS(text, muted);
-  }, [muted]);
-
-  const speakBrowserTTS = useCallback((text, isMuted) => {
-    if (!text || typeof window === "undefined" || !window.speechSynthesis || isMuted) return;
+    // Use browser's built-in TTS
+    if (!window.speechSynthesis) return;
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-IN";
@@ -70,7 +44,7 @@ function useTTS() {
     utterance.onerror = () => setSpeaking(false);
 
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [muted]);
 
   const stop = useCallback(() => {
     if (audioRef.current) {
@@ -180,6 +154,7 @@ export default function Interview() {
   const [isTranscribing,  setIsTranscribing]   = useState(false);
   const [timeLeft,        setTimeLeft]         = useState(0);
   const [totalTimeLeft,   setTotalTimeLeft]    = useState(0);
+  const [totalTimeSeconds, setTotalTimeSeconds] = useState(1200);
   const [transcripts,     setTranscripts]      = useState([]);
   const [loading,         setLoading]          = useState(true);
   const [isSubmitting,    setIsSubmitting]     = useState(false);
@@ -243,6 +218,7 @@ export default function Interview() {
       setMaxQuestions(response.max_questions || 1);
       setTimeLeft(response.time_limit_seconds || 0);
       setTotalTimeLeft(response.remaining_total_seconds || 0);
+      setTotalTimeSeconds(response.total_time_seconds || 1200);
       baselineCapturedRef.current = false;
       autoSubmittedRef.current    = false;
       answerStartTimeRef.current  = Date.now();

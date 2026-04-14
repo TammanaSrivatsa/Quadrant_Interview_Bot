@@ -51,10 +51,6 @@ class Config:
     # ElevenLabs TTS Configuration (disabled - using browser TTS fallback)
     # ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
 
-    # Supabase
-    SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qgrslwklddrutxpnkgpy.supabase.co")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_XZKe_FBZHOtuJJQdMU23WA_NcdkNZSb")
-
     # Paths
     BASE_DIR = Path(__file__).resolve().parent.parent
     UPLOAD_DIR = BASE_DIR / "uploads"

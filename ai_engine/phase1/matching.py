@@ -43,6 +43,9 @@ def extract_text_from_file(file_path):
     if not file_path:
         return ""
     try:
+        # Convert to string if it's a Path object
+        file_path = str(file_path)
+        
         if file_path.endswith(".pdf"):
             # Use PyMuPDF (fitz) for robust PDF extraction
             try:

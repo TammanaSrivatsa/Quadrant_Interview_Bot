@@ -1,7 +1,6 @@
 import axios from "axios";
 import { toStatusObject } from "../utils/stages";
-
-const configuredBaseUrl = String(import.meta.env?.VITE_API_BASE_URL || "/api").trim();
+import { uploadFileToS3 } from "../utils/s3Upload";
 const baseURL = configuredBaseUrl === "/" ? "/api" : configuredBaseUrl.replace(/\/+$/, "");
 
 console.log("[API] VITE_API_BASE_URL:", import.meta.env?.VITE_API_BASE_URL);
@@ -178,12 +177,24 @@ export const candidateApi = {
   dashboard: (jobId) => request({ method: "get", url: "/candidate/dashboard", params: jobId ? { job_id: jobId } : undefined }),
   jds: () => request({ method: "get", url: "/candidate/jds" }),
   selectJd: (jdId) => request({ method: "post", url: "/candidate/select-jd", data: { jd_id: jdId } }),
-  uploadResume: (file, jobId) => {
-    const formData = new FormData();
-    formData.append("resume", file);
-    if (jobId) formData.append("job_id", String(jobId));
-    console.log("[UPLOAD] Starting resume upload, file:", file?.name, "jobId:", jobId);
-    return request({ method: "post", url: "/candidate/upload-resume", data: formData });
+  uploadResume: async (file, jobId, onProgress) => {
+    try {
+      console.log("[UPLOAD] Starting resume upload to S3, file:", file?.name, "jobId:", jobId);
+      
+      // Step 1: Upload to S3
+      const s3Url = await uploadFileToS3(file, onProgress);
+      console.log("[UPLOAD] S3 upload success:", s3Url);
+
+      // Step 2: Send S3 URL to backend for processing
+      return request({ 
+        method: "post", 
+        url: "/candidate/upload-resume-s3", 
+        data: { resume_url: s3Url, job_id: jobId } 
+      });
+    } catch (err) {
+      console.error("[UPLOAD] Resume upload failed:", err.message);
+      throw err;
+    }
   },
   scheduleInterview: (resultId, interviewDate) => request({ method: "post", url: "/candidate/select-interview-date", data: { result_id: resultId, interview_date: interviewDate } }),
   practiceKit: (jobId) => request({ method: "get", url: "/candidate/practice-kit", params: jobId ? { job_id: jobId } : undefined }),
@@ -263,10 +274,6 @@ export const interviewApi = {
   startSession: (resultId) => request({ method: "get", url: "/interview/start", params: resultId ? { result_id: resultId } : undefined }),
   getSessions: () => request({ method: "get", url: "/interview/sessions" }),
   getEvents: (sessionId) => request({ method: "get", url: "/interview/events", params: { session_id: sessionId } }),
-};
-
-export const ttsApi = {
-  generate: (question, voice) => request({ method: "post", url: "/interview/tts", data: { question, voice } }),
 };
 
 export const proctorApi = {
