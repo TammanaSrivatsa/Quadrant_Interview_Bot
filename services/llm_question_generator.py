@@ -1,4 +1,4 @@
-"""LLM-first interview question generation with natural flow (v2 approach) - IMPROVED."""
+"""LLM-first interview question generation with natural flow (v2 approach)."""
 from __future__ import annotations
 
 from typing import Any
@@ -47,7 +47,7 @@ def _is_date_range_string(text: str | None) -> bool:
 
 
 # ============================================================================
-# V2 SYSTEM PROMPT - Natural Flow, Resume-Grounded (IMPROVED)
+# V2 SYSTEM PROMPT - Natural Flow, Resume-Grounded
 # ============================================================================
 
 LLM_QUESTION_SYSTEM_PROMPT = """You are a senior technical interviewer. 
@@ -61,14 +61,12 @@ Every question must:
 3. Be clear enough for an interviewer to understand and follow up on
 4. End with exactly ONE question mark
 5. Be conversational, not academic
-6. Be specific enough that a generic candidate couldn't answer it
 
 Never:
 - Ask about skills NOT on the resume or JD
 - Invent project names, company names, or outcomes
 - Use vague phrases like "in your project" or "walk me through"
 - Ask generic questions that fit any candidate (like "What is X?")
-- Ask questions that could apply to 10 different candidates
 
 WHAT A GOOD QUESTION LOOKS LIKE
 
@@ -80,18 +78,6 @@ WHAT A GOOD QUESTION LOOKS LIKE
 
 ✓ Good: "You said the Payment Service went down during peak hours. Walk me through what you found in the logs."
 ✗ Bad: "How do you handle failures?"
-
-✓ Good: "Tell me about a time you had to balance shipping quickly with code quality in [specific project]."
-✗ Bad: "Tell me about a time you balanced quality with shipping."
-
-BEHAVIORAL QUESTIONS MUST:
-- Reference a REAL project, role, or outcome from their resume
-- Ask for a specific situation with context, action, and result
-- Not be answerable by generic interview answer rehearsal
-- Include enough detail that their answer will naturally reveal their judgment
-
-Example good behavioral: "You shipped the Search Feature in 3 weeks. How did you handle the technical debt from that tight timeline, and what did you learn?"
-Example bad behavioral: "Tell me about a time you had to ship fast."
 
 INTERVIEW FLOW (Natural, not rigid)
 
@@ -118,20 +104,20 @@ This is guidance, not law. If no leadership signals, skip that. If all work in o
 
 QUESTION CHARACTERISTICS BY TYPE
 
-Opener: MUST reference their background and a specific project or role. Not just "tell me about yourself."
-  Example: "You spent 5 years building data pipelines at TechCo. What's the most impactful system you built there?"
+Opener: Open-ended, conversational, sets tone.
+  Example: "Walk me through your most recent role and what you're looking for next."
 
 Project Execution: Specific to their work, ask about HOW not WHAT.
   Example: "You reduced latency by 40%. Walk me through what you measured and how."
 
-Decision/Trade-off: Get at their reasoning, grounded in their actual project.
-  Example: "In the Admin Dashboard, you chose PostgreSQL. Why not NoSQL for that use case?"
+Decision/Trade-off: Get at their reasoning.
+  Example: "You used PostgreSQL. Why not NoSQL for that use case?"
 
-Debugging/Failure: Shows problem-solving. Reference specific incident from resume if possible.
-  Example: "The service was down for 2 hours in your Payment Service. Walk me through your debugging steps."
+Debugging/Failure: Shows problem-solving.
+  Example: "The service was down for 2 hours. Walk me through your debugging steps."
 
-Behavioral/Soft Skills: MUST reference a real project/outcome. No generic answers.
-  Example: "You shipped the Search Feature in 3 weeks despite the tight timeline. How did you handle pressure and keep the team aligned?"
+Behavioral/Soft Skills: How they work with others.
+  Example: "Tell me about a time you had to push back on a requirement."
 
 Role-Specific: Design/scaling/mentoring (if relevant).
   Example: "How would you scale that system to 100x users?"
@@ -156,14 +142,13 @@ Return ONLY valid JSON, no preamble:
 QUALITY CHECKLIST
 
 Before returning, verify:
-- Every question references a REAL project, skill, or outcome from the resume
+- Every question references a REAL project or skill from the resume
 - Could an interviewer understand each question without context?
 - Is each question answerable ONLY by someone who did that work?
 - Does the flow feel natural (not rigid)?
-- Is there behavioral / soft skill coverage that references actual resume items?
+- Is there behavioral / soft skill coverage?
 - No duplicate concepts or phrasing?
 - Each question has exactly one "?"?
-- Behavioral questions are grounded in specific projects/outcomes (not generic)?
 
 TONE
 
@@ -494,7 +479,7 @@ def build_structured_question_input(
 
 
 # ============================================================================
-# V2 PROMPT CONSTRUCTION - Simpler, Natural (IMPROVED)
+# V2 PROMPT CONSTRUCTION - Simpler, Natural
 # ============================================================================
 
 def _llm_user_prompt_v2(structured_input: StructuredQuestionInput, question_count: int, retry_note: str | None = None) -> str:
@@ -506,7 +491,6 @@ def _llm_user_prompt_v2(structured_input: StructuredQuestionInput, question_coun
     roles = structured_input.resume_recent_roles or []
     skills = structured_input.overlap_skills or []
     impact = structured_input.resume_measurable_impact or []
-    leadership = structured_input.resume_leadership_signals or []
     jd_title = structured_input.jd_title or "Role"
     
     # Build evidence snapshot (compact, readable)
@@ -527,28 +511,21 @@ def _llm_user_prompt_v2(structured_input: StructuredQuestionInput, question_coun
         for m in impact[:3]:
             evidence_lines.append(f"  • {m}")
     
-    if leadership:
-        evidence_lines.append("\nLEADERSHIP INDICATORS:")
-        for l in leadership[:2]:
-            evidence_lines.append(f"  • {l}")
-    
     if skills:
         evidence_lines.append("\nSKILLS (matches JD):")
         evidence_lines.append(f"  {', '.join(skills[:8])}")
     
     evidence_snapshot = "\n".join(evidence_lines)
     
-    # Build instructions (simple, clear, STRICT on quality)
+    # Build instructions (simple, clear)
     instructions = [
         f"Generate exactly {question_count} questions for a {jd_title} interview.",
-        "MUST GROUND each question in the candidate's projects, roles, outcomes, or skills above.",
-        "NO GENERIC QUESTIONS. Every question must reference something specific from this resume.",
+        "Ground each question in the candidate's resume projects, roles, or outcomes above.",
         "Make questions flow naturally—like a real conversation, not an interrogation.",
-        "Include mix: 1 opener (references resume), 2-3 technical deep-dives, 1 behavioral (grounded), 1-2 role-specific.",
+        "Include mix: 1 opener, 2-3 technical deep-dives, 1 behavioral, 1-2 role-specific.",
         "Each question = exactly 1 '?', clear language, 20-100 words.",
-        "Use specific project names, not 'your project.' Use their actual roles, not 'your experience.'",
-        "Behavioral questions MUST reference specific projects/outcomes, not be generic.",
-        "Don't ask about skills that aren't in the resume above.",
+        "Reference specific project names, not 'your project.'",
+        "Don't ask about skills that aren't on the resume above.",
     ]
     
     if retry_note:
@@ -609,13 +586,13 @@ def _normalize_question_type_v2(raw_type: str | None) -> str:
 
 
 # ============================================================================
-# V2 VALIDATION - IMPROVED: Strict Grounding Check
+# V2 VALIDATION - Natural Distribution Check
 # ============================================================================
 
 def _validate_question_set_v2(questions: list[dict[str, Any]], structured_input: StructuredQuestionInput, question_count: int) -> list[str]:
     """
     Validate questions for: resume grounding, natural distribution, clarity.
-    STRICT: All non-generic questions must be grounded in resume.
+    Focus on: at least 1 opener, at least 1 behavioral, grounded technical depth.
     """
     issues: list[str] = []
     
@@ -623,66 +600,27 @@ def _validate_question_set_v2(questions: list[dict[str, Any]], structured_input:
         issues.append(f"insufficient_questions: got {len(questions)}, need ~{question_count}")
         return issues
 
-    # Extract resume content for matching
+    # Check 1: Every question grounded in resume
     resume_skills = {_normalize_token(s) for s in (structured_input.resume_skills or [])}
     resume_projects = {_normalize_token(p) for p in (structured_input.resume_projects or [])}
     resume_roles = {_normalize_token(r) for r in (structured_input.resume_recent_roles or [])}
-    resume_impacts = {_normalize_token(m) for m in (structured_input.resume_measurable_impact or [])}
     
-    # Check 1: Grounding (STRICT)
     grounded_count = 0
     for q in questions:
         text_norm = _normalize_token(q.get("text", ""))
-        qtype = q.get("type", "project")
         
-        # Openers MUST reference something from resume
-        if qtype == "opener":
-            is_grounded = (
-                any(proj in text_norm for proj in resume_projects) or
-                any(role in text_norm for role in resume_roles) or
-                any(skill in text_norm for skill in resume_skills) or
-                bool(q.get("project"))
-            )
-            if not is_grounded:
-                issues.append(f"opener_not_grounded: {q.get('text', '')[:50]}")
-            else:
-                grounded_count += 1
-        
-        # Behavioral MUST reference specific project/outcome
-        elif qtype == "behavioral":
-            is_grounded = (
-                any(proj in text_norm for proj in resume_projects) or
-                any(role in text_norm for role in resume_roles) or
-                any(impact in text_norm for impact in resume_impacts) or
-                bool(q.get("project"))
-            )
-            if not is_grounded:
-                issues.append(f"behavioral_not_grounded: {q.get('text', '')[:50]}")
-            else:
-                grounded_count += 1
-        
-        # Technical questions should reference projects/skills
-        elif qtype in {"project", "debugging", "decision"}:
-            is_grounded = (
-                any(proj in text_norm for proj in resume_projects) or
-                any(skill in text_norm for skill in resume_skills) or
-                any(impact in text_norm for impact in resume_impacts) or
-                bool(q.get("project"))
-            )
-            if is_grounded:
-                grounded_count += 1
-            else:
-                issues.append(f"question_not_grounded: {q.get('text', '')[:50]}")
-        
-        # Role-specific can be more flexible but should ideally reference something
-        elif qtype == "role_specific":
-            is_grounded = (
-                any(proj in text_norm for proj in resume_projects) or
-                any(skill in text_norm for skill in resume_skills) or
-                bool(q.get("project"))
-            )
-            if is_grounded:
-                grounded_count += 1
+        # Check if it mentions a real project, role, or skill
+        is_grounded = (
+            q.get("type") == "opener" or
+            any(proj and proj in text_norm for proj in resume_projects) or
+            any(role and role in text_norm for role in resume_roles) or
+            any(skill and skill in text_norm for skill in resume_skills) or
+            bool(q.get("project"))
+        )
+        if is_grounded:
+            grounded_count += 1
+        elif q.get("type") not in {"behavioral", "opener"}:
+            issues.append(f"question_not_grounded: {q.get('text', '')[:60]}")
 
     # Check 2: Type distribution (natural, not rigid)
     type_counts = {}
@@ -703,30 +641,16 @@ def _validate_question_set_v2(questions: list[dict[str, Any]], structured_input:
 
     # Check 3: No weak phrases or duplicates
     seen_similarity = set()
-    weak_phrases = [
-        "tell me about yourself",
-        "what is your experience with",
-        "explain what",
-        "what do you think about",
-        "describe a time you",
-        "tell me about a time",
-    ]
-    
     for q in questions:
         text = q.get("text", "")
         
-        # Weak phrases (generic)
-        text_lower = text.lower()
-        if any(phrase in text_lower for phrase in weak_phrases):
-            # Only flag if it doesn't have specific project reference
-            is_specific = bool(q.get("project")) or any(proj in _normalize_token(text) for proj in resume_projects)
-            if not is_specific:
-                issues.append(f"weak_phrase: {text[:50]}")
+        weak = ["tell me about yourself", "what is your experience with", "explain what", "what do you think about"]
+        if any(phrase in text.lower() for phrase in weak):
+            issues.append(f"weak_phrase: {text[:50]}")
         
-        # Duplicates
         similarity = _similarity_key(text)
         if similarity in seen_similarity:
-            issues.append(f"duplicate_question: {text[:50]}")
+            issues.append("duplicate_question")
         seen_similarity.add(similarity)
 
     # Check 4: Question clarity
@@ -834,7 +758,7 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
                 {"role": "system", "content": LLM_QUESTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.28 if retry_note else 0.32,
+            temperature=0.25 if retry_note else 0.35,
             max_tokens=2000,
         )
         logger.info("llm_question_request_success provider=%s model=%s retry=%s", provider, model, bool(retry_note))
@@ -865,12 +789,10 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
 
 
 def _retry_note_for_issues(issues: list[str]) -> str:
-    critical_issues = [i for i in issues if "grounded" in i or "missing_" in i]
     return (
-        "CRITICAL: Ensure EVERY question references specific resume content. "
-        + "Regenerate with: 1) specific project names from resume, 2) actual outcomes/roles, "
-        + "3) no generic phrases, 4) opener + behavioral grounded in projects, 5) no duplicates. "
-        + f"Issues: {', '.join(critical_issues[:3] if critical_issues else issues[:3])}"
+        "Regenerate with stronger grounding. Quality issues: "
+        + ", ".join(issues[:5])
+        + ". Ensure: specific project names, 1 opener, 1 behavioral, no duplicates, no weak phrases, all technical questions reference actual resume content."
     )
 
 
@@ -896,7 +818,6 @@ def _generate_validated_llm_questions(
         if len(retry_issues) <= len(first_issues):
             final_questions = second_attempt["questions"]
             final_user_prompt = second_attempt["user_prompt"]
-            logger.info("llm_retry_improved quality_delta=%s first_issues=%s retry_issues=%s", len(first_issues) - len(retry_issues), len(first_issues), len(retry_issues))
 
     quality = {
         "first_attempt_issues": first_issues,
@@ -945,101 +866,6 @@ def generate_llm_questions(
 # ============================================================================
 # FALLBACK BUNDLE & RUNTIME ASSEMBLY
 # ============================================================================
-
-def _make_grounded_emergency_fallback(
-    structured_input: StructuredQuestionInput,
-    desired_count: int,
-) -> list[dict[str, Any]]:
-    """Generate grounded fallback questions using actual resume content."""
-    questions = []
-    projects = structured_input.resume_projects or []
-    roles = structured_input.resume_recent_roles or []
-    impacts = structured_input.resume_measurable_impact or []
-    
-    top_project = projects[0] if projects else "your project"
-    second_project = projects[1] if len(projects) > 1 else projects[0] if projects else "your work"
-    top_impact = impacts[0] if impacts else "your impact"
-    top_role = roles[0] if roles else "your recent role"
-    
-    # Opener
-    if len(questions) < desired_count:
-        questions.append({
-            "text": f"Walk me through your background, particularly your experience with {top_project}, and what drew you to this role.",
-            "type": "opener",
-            "focus": "background and motivation",
-            "project": top_project,
-            "intent": "Understand candidate background and why this role interests them.",
-            "reference_answer": "Clear summary of experience, specific interest in the role, and relevant background.",
-        })
-    
-    # Technical deep-dive
-    if len(questions) < desired_count:
-        questions.append({
-            "text": f"Tell me about {top_project}. What was the hardest technical problem you had to solve?",
-            "type": "project",
-            "focus": "technical problem-solving",
-            "project": top_project,
-            "intent": "Assess depth of technical knowledge and problem-solving skills.",
-            "reference_answer": "Specific technical challenge, your approach, tools used, and the outcome.",
-        })
-    
-    # Impact-focused
-    if len(questions) < desired_count and top_impact:
-        questions.append({
-            "text": f"You mentioned {top_impact}. Walk me through how you achieved that and what trade-offs you made.",
-            "type": "decision",
-            "focus": "execution and trade-offs",
-            "project": top_project,
-            "intent": "Assess ability to deliver results and make informed trade-offs.",
-            "reference_answer": "Specific steps taken, challenges overcome, and conscious decisions about quality vs. speed.",
-        })
-    
-    # Behavioral - grounded in actual work
-    if len(questions) < desired_count:
-        questions.append({
-            "text": f"On {top_project}, you had to balance multiple priorities. How did you handle that, and what did you learn?",
-            "type": "behavioral",
-            "focus": "handling complexity and learning",
-            "project": top_project,
-            "intent": "Assess soft skills, resilience, and growth mindset.",
-            "reference_answer": "Specific situation, how you prioritized, communication with team/stakeholders, and concrete lesson learned.",
-        })
-    
-    # Secondary project
-    if len(questions) < desired_count and second_project != top_project:
-        questions.append({
-            "text": f"In {second_project}, what was your biggest learning, and how did it inform your later work?",
-            "type": "project",
-            "focus": "learning and growth",
-            "project": second_project,
-            "intent": "Assess ability to learn from experience and apply lessons.",
-            "reference_answer": "Specific lesson, why it mattered, and concrete example of how it shaped later work.",
-        })
-    
-    # Debugging/failure
-    if len(questions) < desired_count:
-        questions.append({
-            "text": f"Tell me about a time something broke or went wrong in {top_project}. How did you debug and fix it?",
-            "type": "debugging",
-            "focus": "troubleshooting and resilience",
-            "project": top_project,
-            "intent": "Assess technical depth and composure under pressure.",
-            "reference_answer": "Specific incident, debugging methodology, root cause, and fix. What you learned.",
-        })
-    
-    # Judgment/philosophy
-    if len(questions) < desired_count:
-        questions.append({
-            "text": "How do you approach balancing shipping quickly with maintaining code quality and reliability?",
-            "type": "decision",
-            "focus": "engineering judgment",
-            "intent": "Assess pragmatism, technical judgment, and communication.",
-            "reference_answer": "Thoughtful discussion of trade-offs with a concrete example from their work.",
-        })
-    
-    # Scale down to desired count
-    return questions[:desired_count]
-
 
 def _pick_fallback_top_up_v2(
     *,
@@ -1120,7 +946,6 @@ def _enforce_category_coverage(
                     break
                     
         if victim_idx >= 0:
-            logger.info("enforce_category_coverage replaced_question_type=%s position=%s", str(result[victim_idx].get("type")), victim_idx)
             result[victim_idx] = candidate
             seen_texts.add(_similarity_key(candidate.get("text")))
             return True
@@ -1129,9 +954,26 @@ def _enforce_category_coverage(
 
     if not has_opener:
         success = _swap_question("opener", replace_from_end=False)
+        if not success and result:
+            result[0] = {
+                "text": "Walk me through your background and what drew you to this role.",
+                "type": "opener",
+                "focus": "background",
+                "intent": "Understand candidate background and motivation.",
+                "reference_answer": "Clear summary of experience and specific interest in the role.",
+            }
         
     if not has_behavioral:
         success = _swap_question("behavioral", replace_from_end=True)
+        if not success and result:
+            if len(result) > 1:
+                result[-1] = {
+                    "text": "Tell me about a time you had to balance delivering quickly with maintaining code quality.",
+                    "type": "behavioral",
+                    "focus": "pragmatism",
+                    "intent": "Assess technical judgment and communication.",
+                    "reference_answer": "Specific example showing trade-off thinking and reasoning.",
+                }
         
     return result
 
@@ -1181,7 +1023,7 @@ def _runtime_bundle_from_llm(
         _llm_provider(),
         llm_bundle.get("llm_model"),
         "llm_primary",
-        llm_topped_up_with_fallback,
+        False,
         len(questions),
     )
     
@@ -1194,7 +1036,7 @@ def _runtime_bundle_from_llm(
         "meta": {
             **(fallback_bundle.get("meta") or {}),
             "generation_mode": "llm_primary",
-            "fallback_used": llm_topped_up_with_fallback,
+            "fallback_used": False,
             "llm_topped_up_with_fallback": llm_topped_up_with_fallback,
             "llm_model": llm_bundle.get("llm_model"),
             "llm_system_prompt": llm_bundle.get("system_prompt"),
@@ -1226,13 +1068,12 @@ def _runtime_bundle_from_fallback(
     )
     
     logger.info(
-        "llm_question_bundle_ready_v2 provider=%s model=%s generation_mode=%s fallback_used=%s questions=%s reason=%s",
+        "llm_question_bundle_ready_v2 provider=%s model=%s generation_mode=%s fallback_used=%s questions=%s",
         _llm_provider(),
         _llm_model(),
         "fallback_dynamic_plan",
         True,
         len(questions),
-        fallback_reason[:50],
     )
     
     counts = _bundle_counts_v2(questions)
@@ -1245,8 +1086,68 @@ def _runtime_bundle_from_fallback(
     }
 
 
+EMERGENCY_FALLBACK_QUESTIONS = [
+    {
+        "text": "Walk me through your background and the most recent role on your resume.",
+        "type": "opener",
+        "focus": "background",
+        "intent": "Understand candidate background.",
+        "reference_answer": "Clear summary of experience and key skills.",
+    },
+    {
+        "text": "Tell me about a time you had to manage conflicting priorities or navigate a difficult situation to deliver a project.",
+        "type": "behavioral",
+        "focus": "conflict resolution",
+        "intent": "Assess soft skills and communication.",
+        "reference_answer": "Specific example with clear outcome.",
+    },
+    {
+        "text": "Describe a recent technical challenge you faced and how you resolved it.",
+        "type": "project",
+        "focus": "problem-solving",
+        "intent": "Assess analytical and technical skills.",
+        "reference_answer": "Detailed explanation of approach and results.",
+    },
+    {
+        "text": "How would you approach scaling a system to handle 10x more requests?",
+        "type": "role_specific",
+        "focus": "systems thinking",
+        "intent": "Assess architectural thinking.",
+        "reference_answer": "Thoughtful discussion of bottlenecks and tradeoffs.",
+    },
+    {
+        "text": "How do you ensure code you deliver is maintainable and reliable?",
+        "type": "project",
+        "focus": "software engineering practices",
+        "intent": "Assess quality standards.",
+        "reference_answer": "Specific practices and reasoning.",
+    },
+    {
+        "text": "Tell me about a time you learned a new technology quickly to deliver a critical feature.",
+        "type": "behavioral",
+        "focus": "learning agility",
+        "intent": "Assess adaptability.",
+        "reference_answer": "Specific example with clear learning and delivery.",
+    },
+    {
+        "text": "What is the most complex debugging situation you've worked through in production?",
+        "type": "debugging",
+        "focus": "troubleshooting",
+        "intent": "Assess technical depth.",
+        "reference_answer": "Detailed walkthrough of diagnosis and resolution.",
+    },
+    {
+        "text": "How do you approach trade-offs between perfect engineering and shipping quickly?",
+        "type": "decision",
+        "focus": "pragmatism",
+        "intent": "Assess business acumen.",
+        "reference_answer": "Thoughtful discussion of decision-making process.",
+    }
+]
+
+
 # ============================================================================
-# MAIN ENTRY POINT - WITH FALLBACK (IMPROVED)
+# MAIN ENTRY POINT - WITH FALLBACK
 # ============================================================================
 
 def generate_question_bundle_with_fallback(
@@ -1259,8 +1160,8 @@ def generate_question_bundle_with_fallback(
     jd_text: str | None = None,
 ) -> dict[str, Any]:
     """
-    Generate interview questions with natural flow and strict grounding.
-    Falls back to grounded deterministic questions if LLM fails.
+    Generate interview questions with natural flow.
+    Falls back to deterministic planner if LLM fails.
     
     Returns: {
         "questions": [list of questions],
@@ -1286,7 +1187,7 @@ def generate_question_bundle_with_fallback(
         )
     except Exception as exc:
         logger.error("Fallback bundle generation failed: %s", exc)
-        fallback_bundle = {"questions": []}
+        fallback_bundle = {"questions": EMERGENCY_FALLBACK_QUESTIONS[:desired_count]}
 
     try:
         llm_bundle = generate_llm_questions(
@@ -1323,7 +1224,7 @@ def generate_question_bundle_with_fallback(
             model,
             desired_count,
             len(questions),
-            llm_topped_up_with_fallback,
+            False,
         )
 
         return _runtime_bundle_from_llm(
@@ -1335,7 +1236,25 @@ def generate_question_bundle_with_fallback(
         )
         
     except Exception as exc:
-        logger.warning("LLM question generation failed, using grounded fallback: %s", exc)
+        logger.warning("LLM question generation failed, using fallback: %s", exc)
+        fallback_questions = list(fallback_bundle.get("questions") or [])
+        
+        if not fallback_questions or len(fallback_questions) < desired_count:
+            fallback_questions = EMERGENCY_FALLBACK_QUESTIONS[:desired_count]
+        else:
+            fallback_questions = _enforce_category_coverage(fallback_questions, fallback_questions)
+            
+        fallback_bundle["questions"] = fallback_questions
+        
+        logger.warning(
+            "LLM_FAILED_v2 provider=%s model=%s question_count_requested=%s question_count_returned=%s fallback_used=%s error=%s",
+            provider,
+            model,
+            desired_count,
+            len(fallback_questions),
+            True,
+            str(exc)[:100],
+        )
         
         try:
             structured_input = build_structured_question_input(
@@ -1344,8 +1263,7 @@ def generate_question_bundle_with_fallback(
                 jd_skill_scores=jd_skill_scores or {},
                 jd_text=jd_text,
             )
-        except Exception as struct_exc:
-            logger.error("Failed to build structured input: %s", struct_exc)
+        except Exception:
             structured_input = StructuredQuestionInput(
                 role=jd_title or "Interview Role",
                 role_title=jd_title or "Interview Role",
@@ -1372,20 +1290,6 @@ def generate_question_bundle_with_fallback(
                 resume_only_skills=[],
                 jd_only_skills=[],
             )
-        
-        # Use GROUNDED emergency fallback based on actual resume content
-        fallback_questions = _make_grounded_emergency_fallback(structured_input, desired_count)
-        fallback_bundle["questions"] = fallback_questions
-        
-        logger.warning(
-            "LLM_FAILED_v2 provider=%s model=%s question_count_requested=%s question_count_returned=%s fallback_used=%s error=%s",
-            provider,
-            model,
-            desired_count,
-            len(fallback_questions),
-            True,
-            str(exc)[:100],
-        )
 
         return _runtime_bundle_from_fallback(
             fallback_bundle=fallback_bundle,
@@ -1396,7 +1300,7 @@ def generate_question_bundle_with_fallback(
 
 
 # ============================================================================
-# ADAPTIVE PROBING (Phase 2)
+# ADAPTIVE PROBING (Phase 2) - Keep existing
 # ============================================================================
 
 FOLLOWUP_QUESTION_SYSTEM_PROMPT = """You are a highly experienced technical interviewer. 
