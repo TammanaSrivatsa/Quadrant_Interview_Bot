@@ -27,7 +27,7 @@ from routes.dependencies import SessionUser, require_role
 from routes.schemas import CandidateSelectJDBody, ScheduleInterviewBody
 from services.practice import build_practice_kit
 from services.resume_advice import build_resume_advice
-
+from services.supabase_storage import upload_resume as supabase_upload_resume
 from utils.email_service import send_interview_email
 
 router = APIRouter()
@@ -239,6 +239,12 @@ def upload_resume(
     db.commit()
     db.refresh(candidate)
     logger.info(f"UPLOAD_RESUME resume_path saved to DB: {candidate.resume_path}")
+
+    try:
+        supabase_result = supabase_upload_resume(candidate.id, resume)
+        logger.info(f"UPLOAD_RESUME Supabase upload: {supabase_result.get('url')}")
+    except Exception as e:
+        logger.warning(f"UPLOAD_RESUME Supabase upload failed (falling back to local): {e}")
 
     selected_jd_id = job_id or candidate.selected_jd_id
     if not selected_jd_id:
