@@ -850,7 +850,11 @@ def _call_llm(structured_input: StructuredQuestionInput, question_count: int, re
     
     logger.info("llm_cleaned_response content_len=%s content_preview=%s", len(raw_content), raw_content[:500] if raw_content else "EMPTY")
     
-    payload = _extract_json_object(raw_content)
+    try:
+        payload = _extract_json_object(raw_content)
+    except Exception as json_exc:
+        logger.error("llm_json_parse_failure raw_content=%s error=%s", raw_content[:500] if raw_content else "EMPTY", json_exc)
+        raise ValueError(f"JSON parse failed: {json_exc}") from json_exc
     questions = _normalize_llm_questions_v2(
         raw_questions=list(payload.get("questions") or []),
         structured_input=structured_input,
@@ -1104,6 +1108,35 @@ def _make_grounded_emergency_fallback(
             "focus": "technical communication",
             "intent": "Assess communication skills.",
             "reference_answer": "Specific situation, how you adapted, outcome.",
+        },
+        {
+            "text": "What's your typical workflow for code reviews? What do you look for?",
+            "type": "technical",
+            "focus": "code review process",
+            "intent": "Assess code quality mindset.",
+            "reference_answer": "Style, logic, edge cases, security, performance.",
+        },
+        {
+            "text": "If you could redesign {top_project} from scratch, what would you change?",
+            "type": "system_design",
+            "focus": "refactoring thinking",
+            "project": top_project,
+            "intent": "Assess architectural growth.",
+            "reference_answer": "What would be different and why.",
+        },
+        {
+            "text": "How do you prioritize features or bug fixes when you have limited time?",
+            "type": "decision",
+            "focus": "prioritization",
+            "intent": "Assess time management.",
+            "reference_answer": "Impact vs effort, stakeholder input, business value.",
+        },
+        {
+            "text": "Describe your experience with agile or scrum methodologies.",
+            "type": "behavioral",
+            "focus": "process methodology",
+            "intent": "Assess team collaboration.",
+            "reference_answer": "Sprint planning, standups, retrospectives.",
         },
     ]
     
