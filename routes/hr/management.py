@@ -1417,6 +1417,7 @@ def hr_interview_score(
 @router.get("/hr/interviews/{session_id}/export-pdf")
 def hr_export_interview_pdf(
     session_id: int,
+    upload_s3: bool = False,
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
 ):
@@ -1440,11 +1441,22 @@ def hr_export_interview_pdf(
          # Optional: you could allow partial reports, but usually best after completion
          pass
 
-    pdf_buffer = generate_interview_pdf(session, db)
+    return_s3 = upload_s3 and db.query(Result).filter(Result.id == session.result_id).first()
+    pdf_result = generate_interview_pdf(session, db, return_s3_url=return_s3)
+    
     candidate = db.query(Candidate).filter(Candidate.id == session.candidate_id).first()
     safe_name = (candidate.name or "Candidate").replace(" ", "_")
     filename = f"Interview_Report_{safe_name}_{session.id}.pdf"
 
+    if isinstance(pdf_result, tuple):
+        pdf_buffer, s3_url = pdf_result
+        return {
+            "pdf_url": s3_url,
+            "filename": filename,
+            "message": "PDF uploaded to S3 successfully"
+        }
+    
+    pdf_buffer = pdf_result
     return StreamingResponse(
         pdf_buffer,
         media_type="application/pdf",

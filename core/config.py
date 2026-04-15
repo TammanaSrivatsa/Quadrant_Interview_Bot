@@ -55,5 +55,9 @@ class Config:
     BASE_DIR = Path(__file__).resolve().parent.parent
     UPLOAD_DIR = BASE_DIR / "uploads"
 
+    # S3 Configuration (for proctoring via Lambda)
+    S3_PROCTOR_PREFIX = os.getenv("S3_PROCTOR_PREFIX", "proctoring")
+    S3_REPORT_PREFIX = os.getenv("S3_REPORT_PREFIX", "reports")
+
 # Instantiate for global use
 config = Config()

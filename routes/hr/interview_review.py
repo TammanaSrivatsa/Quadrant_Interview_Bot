@@ -358,7 +358,7 @@ def interview_detail(
                 "score": _safe_float(ev.score),
                 "created_at": ev.created_at,
                 "meta_json": _json_dict(ev.meta_json),
-                "image_url": f"/uploads/{ev.image_path}" if ev.image_path else None,
+                "image_url": ev.image_path if ev.image_path and ev.image_path.startswith("http") else (f"/uploads/{ev.image_path}" if ev.image_path else None),
                 "suspicious": ev.event_type not in {"periodic", "baseline"},
             }
             for ev in events

@@ -3,7 +3,7 @@ import { toStatusObject } from "../utils/stages";
 import { uploadFileToS3 } from "../utils/s3Upload";
 const configuredBaseUrl = String(import.meta.env?.VITE_API_BASE_URL || "/api").trim();
 const baseURL = configuredBaseUrl === "/" ? "/api" : configuredBaseUrl.replace(/\/+$/, "");
-const isProduction = configuredBaseUrl.includes("cloudfront.net");
+const isProduction = configuredBaseUrl.includes("cloudfront.net") || configuredBaseUrl.includes("elasticbeanstalk.com") || configuredBaseUrl.includes("aws.amazon.com");
 
 console.log("[API] VITE_API_BASE_URL:", import.meta.env?.VITE_API_BASE_URL);
 console.log("[API] Resolved baseURL:", baseURL);
@@ -186,7 +186,15 @@ export const candidateApi = {
     try {
       console.log("[UPLOAD] Starting resume upload, file:", file?.name, "jobId:", jobId);
       
-      console.log("[UPLOAD] Using direct backend upload");
+      if (isProduction) {
+        const s3Url = await uploadFileToS3(file, onProgress);
+        const response = await apiClient.post("/candidate/upload-resume-s3", 
+          { resume_url: s3Url, job_id: jobId },
+          { headers: { "Content-Type": "application/json" } }
+        );
+        return response.data;
+      }
+      
       const formData = new FormData();
       formData.append("resume", file);
       if (jobId) formData.append("job_id", String(jobId));

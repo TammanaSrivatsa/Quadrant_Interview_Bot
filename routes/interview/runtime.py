@@ -58,6 +58,8 @@ from routes.interview.evaluation import run_evaluation_task
 
 from utils.proctoring_cv import analyze_frame, compare_signatures, should_store_periodic
 
+from utils.s3_utils import upload_proctor_frame
+
 
 
 from utils.stt_whisper import transcribe_audio_bytes
@@ -2803,39 +2805,28 @@ def upload_proctor_frame(
 
 
 
-    session_dir = PROCTOR_UPLOAD_ROOT / str(session.id)
-
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    
-
-    # Enforce a maximum of 50 proctoring frames per session to prevent disk exhaustion
-
-    existing_frames = sorted(session_dir.glob("*.jpg"))
-
-    if len(existing_frames) >= 50:
-
-        for old_frame in existing_frames[:-49]:
-
-            try:
-
-                old_frame.unlink()
-
-            except Exception:
-
-                pass
-
-
-
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
 
-    file_path = session_dir / f"{timestamp}.jpg"
-
-    file_path.write_bytes(raw)
-
-
-
-    relative_path = file_path.relative_to(Path("uploads")).as_posix()
+    try:
+        image_url = upload_proctor_frame(session.id, raw, timestamp)
+        relative_path = image_url
+    except Exception as e:
+        logger.warning(f"S3 upload failed, falling back to local: {e}")
+        session_dir = PROCTOR_UPLOAD_ROOT / str(session.id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        
+        existing_frames = sorted(session_dir.glob("*.jpg"))
+        if len(existing_frames) >= 50:
+            for old_frame in existing_frames[:-49]:
+                try:
+                    old_frame.unlink()
+                except Exception:
+                    pass
+        
+        file_path = session_dir / f"{timestamp}.jpg"
+        file_path.write_bytes(raw)
+        relative_path = file_path.relative_to(Path("uploads")).as_posix()
+        image_url = f"/uploads/{relative_path}"
 
     score = float(motion_score)
 
@@ -2929,7 +2920,7 @@ def upload_proctor_frame(
 
     payload_out["stored"] = True
     payload_out["event_id"] = event.id
-    payload_out["image_url"] = f"/uploads/{relative_path}"
+    payload_out["image_url"] = image_url
 
     return payload_out
 
