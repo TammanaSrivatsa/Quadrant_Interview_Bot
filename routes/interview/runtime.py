@@ -1459,8 +1459,12 @@ def interview_start(
     db: Session = Depends(get_db),
 
 ) -> dict[str, Any]:
-
-    logger.info(f"INTERVIEW_START_DEBUG payload={payload}")
+    
+    import sys
+    print(f"DEBUG: interview_start called with payload={payload}", flush=True)
+    sys.stdout.flush()
+    
+    logger.info(f"INTERVIEW_START_DEBUG payload result_id={payload.result_id} consent={payload.consent_given}")
 
     if payload.candidate_id is not None and payload.candidate_id != current_user.user_id:
 
@@ -1478,9 +1482,11 @@ def interview_start(
 
     result = _resolve_candidate_result(db, candidate.id, payload.result_id)
     
+    print(f"DEBUG: result found id={result.id} shortlisted={result.shortlisted} interview_date={result.interview_date}", flush=True)
     logger.info(f"INTERVIEW_START_DEBUG result_id={result.id} shortlisted={result.shortlisted} interview_date={result.interview_date}")
     
     access = interview_access_state(result)
+    print(f"DEBUG: access state={access}", flush=True)
     logger.info(f"INTERVIEW_START_DEBUG access_state={access}")
 
     _ensure_interview_ready(result)
