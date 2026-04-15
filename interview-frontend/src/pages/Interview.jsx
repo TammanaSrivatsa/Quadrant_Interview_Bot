@@ -198,6 +198,10 @@ export default function Interview() {
   const [previewWarning,  setPreviewWarning]   = useState("");
   const [answerFeedback,  setAnswerFeedback]   = useState(null);
   const [proctorAlert,    setProctorAlert]     = useState("");
+  const [selectedTtsVoice, setSelectedTtsVoice] = useState(() => {
+    const saved = sessionStorage.getItem(`interview-tts-voice:${resultId}`);
+    return saved || "male";
+  });
 
   const selectedVoice = (() => {
     const saved = sessionStorage.getItem(`interview-voice:${resultId}`);
@@ -701,7 +705,7 @@ export default function Interview() {
               </h2>
               <button
                 type="button"
-                onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "", selectedVoice)}
+                onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "", selectedTtsVoice)}
                 disabled={ttsLoading}
                 title={speaking ? "Stop" : "Read question aloud (Indian accent)"}
                 className={cn(
@@ -899,18 +903,31 @@ export default function Interview() {
                   {speaking ? "Speaking question…" : muted ? "Muted" : "Auto-speak ON"}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={toggleMute}
-                className={cn(
-                  "p-1.5 rounded-lg border transition-all",
-                  muted
-                    ? "bg-slate-700 border-slate-600 text-slate-400 hover:text-white"
-                    : "bg-blue-900/30 border-blue-700/50 text-blue-400 hover:bg-blue-900/50"
-                )}
-              >
-                {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedTtsVoice}
+                  onChange={(e) => {
+                    setSelectedTtsVoice(e.target.value);
+                    sessionStorage.setItem(`interview-tts-voice:${resultId}`, e.target.value);
+                  }}
+                  className="bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-2 py-1"
+                >
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className={cn(
+                    "p-1.5 rounded-lg border transition-all",
+                    muted
+                      ? "bg-slate-700 border-slate-600 text-slate-400 hover:text-white"
+                      : "bg-blue-900/30 border-blue-700/50 text-blue-400 hover:bg-blue-900/50"
+                  )}
+                >
+                  {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </button>
+              </div>
             </div>
 
             {previewWarning && (

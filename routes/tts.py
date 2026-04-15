@@ -9,11 +9,11 @@ from pydantic import BaseModel
 
 try:
     from bark import generate_audio
-    from bark.generation import preload_models
+    from bark import preload_models
     BARK_AVAILABLE = True
 except ImportError:
     BARK_AVAILABLE = False
-    print("Warning: bark-speech-synthesis not installed. TTS will be unavailable.")
+    print("Warning: bark not installed. TTS will be unavailable. Install with: pip install git+https://github.com/suno-ai/bark.git")
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
