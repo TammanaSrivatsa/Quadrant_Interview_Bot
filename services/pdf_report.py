@@ -13,9 +13,9 @@ def _upload_to_s3_via_lambda(file_bytes: bytes, key: str, content_type: str = "a
     """Upload to S3 using Lambda-generated presigned URL."""
     try:
         import requests
-        LAMBDA_URL = "https://lp6t2xn0q4.execute-api.ap-south-1.amazonaws.com/prod/generate-upload-url"
+        from core.config import config
         resp = requests.get(
-            LAMBDA_URL,
+            config.LAMBDA_S3_URL,
             params={"fileName": key.split("/")[-1], "fileType": content_type},
             timeout=30
         )

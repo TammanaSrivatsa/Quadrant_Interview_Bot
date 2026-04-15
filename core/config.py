@@ -56,6 +56,7 @@ class Config:
     UPLOAD_DIR = BASE_DIR / "uploads"
 
     # S3 Configuration (for proctoring via Lambda)
+    LAMBDA_S3_URL = os.getenv("LAMBDA_S3_URL", "https://lp6t2xn0q4.execute-api.ap-south-1.amazonaws.com/prod/generate-upload-url")
     S3_PROCTOR_PREFIX = os.getenv("S3_PROCTOR_PREFIX", "proctoring")
     S3_REPORT_PREFIX = os.getenv("S3_REPORT_PREFIX", "reports")
 
