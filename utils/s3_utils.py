@@ -27,7 +27,7 @@ def upload_to_s3_via_lambda(file_bytes: bytes, key: str, content_type: str = "im
         logger.error(f"S3 upload via Lambda failed for {key}: {e}")
         raise
 
-def upload_proctor_frame(session_id: int, image_bytes: bytes, timestamp: str) -> str:
+def upload_proctor_image(session_id: int, image_bytes: bytes, timestamp: str) -> str:
     """Upload proctoring frame to S3."""
     key = f"{config.S3_PROCTOR_PREFIX}/session_{session_id}/{timestamp}.jpg"
     return upload_to_s3_via_lambda(image_bytes, key, "image/jpeg")

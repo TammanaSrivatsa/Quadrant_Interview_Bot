@@ -58,7 +58,7 @@ from routes.interview.evaluation import run_evaluation_task
 
 from utils.proctoring_cv import analyze_frame, compare_signatures, should_store_periodic
 
-from utils.s3_utils import upload_proctor_frame
+from utils.s3_utils import upload_proctor_image
 
 
 
@@ -2808,7 +2808,7 @@ def upload_proctor_frame(
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
 
     try:
-        image_url = upload_proctor_frame(session.id, raw, timestamp)
+        image_url = upload_proctor_image(session.id, raw, timestamp)
         relative_path = image_url
     except Exception as e:
         logger.warning(f"S3 upload failed, falling back to local: {e}")
