@@ -148,39 +148,45 @@ export default function HRDashboardPage() {
         <MetricCard title="Interview Success" value={`${Math.round(Number(overview.interview_success_rate || 0))}%`} icon={TrendingUp} color="blue" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 page-enter-delay-2">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 page-enter-delay-2">
+        <div className="lg:col-span-3 space-y-6">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <ChartCard title="Hiring Funnel" subtitle="Applied → shortlisted → interview completed → selected" accent="blue">
-              {!chartReadyFunnel.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No funnel data yet</div> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyFunnel} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="value" fill="#2563eb" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div>}
+              {!chartReadyFunnel.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No funnel data yet</div> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height={200}><BarChart data={chartReadyFunnel} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="value" fill="#2563eb" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div>}
+            </ChartCard>
+
+            <ChartCard title="Top Skills Distribution" subtitle="Most frequently matched skills">
+              {!chartReadySkills.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No skill data</div> : <>
+                <div className="ats-chart-box" style={{height: "200px"}}><ResponsiveContainer width="100%" height="100%"><PieChart><Tooltip /><Pie data={chartReadySkills} dataKey="count" nameKey="skill" outerRadius={60} innerRadius={30}>{chartReadySkills.map((entry) => <Cell key={entry.skill} fill={entry.fill} />)}</Pie></PieChart></ResponsiveContainer></div>
+                <div className="space-y-2 mt-3 max-h-[150px] overflow-y-auto pr-2">{chartReadySkills.slice(0, 5).map((item) => <div key={item.skill} className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/40 px-3 py-2"><span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.skill}</span><span className="text-sm font-bold text-slate-900 dark:text-white">{item.count}</span></div>)}</div>
+              </>}
             </ChartCard>
           </div>
 
           <ChartCard title="Average Score per JD" subtitle="Compare ATS score trends across job descriptions" accent="green">
-            {!chartReadyJdScores.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No JD score data</div> : <div className="ats-chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#10b981" /></BarChart></ResponsiveContainer></div>}
+            {!chartReadyJdScores.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No JD score data</div> : <div className="ats-chart-box" style={{height: "250px"}}><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#10b981" /></BarChart></ResponsiveContainer></div>}
           </ChartCard>
 
           <ChartCard title="Top Ranked Candidates" subtitle="Final weighted ATS score sorted across current applications.">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
-              {!ranked.length ? <div className="col-span-2 text-center py-8 text-slate-500 dark:text-slate-400">No ranked candidates yet</div> : ranked.map((candidate) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-2">
+              {!ranked.length ? <div className="col-span-3 text-center py-8 text-slate-500 dark:text-slate-400">No ranked candidates yet</div> : ranked.map((candidate) => {
                 const score = Math.round(Number(candidate.finalAIScore || candidate.score || 0));
                 const scoreColor = score >= 80 ? "green" : score >= 65 ? "blue" : "red";
                 return (
                   <div key={candidate.result_id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 card-hover-lift">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3 mb-2">
                       <div>
                         <p className="text-base font-bold text-slate-900 dark:text-white">#{candidate.rank || "-"} {candidate.name}</p>
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{candidate.candidate_uid}</p>
                       </div>
                       <StatusBadge status={candidate.stage || candidate.status} />
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2 flex-1">
                         <p className="text-slate-400 text-xs uppercase font-bold">Final Score</p>
                         <p className="font-black text-blue-600 mt-0.5">{score}%</p>
                         <div className="score-bar mt-2"><div className={`score-bar-fill ${scoreColor}`} style={{ width: `${score}%` }} /></div>
                       </div>
-                      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2"><p className="text-slate-400 text-xs uppercase font-bold">Recommendation</p><p className="font-bold text-slate-900 dark:text-white mt-0.5">{candidate.recommendationTag || "N/A"}</p></div>
                     </div>
                   </div>
                 );
@@ -189,12 +195,16 @@ export default function HRDashboardPage() {
           </ChartCard>
         </div>
 
-        <div className="space-y-6">
-          <ChartCard title="Top Skills Distribution" subtitle="Most frequently matched skills across current candidates">
-            {!chartReadySkills.length ? <div className="text-center py-8 text-slate-500 dark:text-slate-400">No skill data</div> : <>
-              <div className="ats-chart-box"><ResponsiveContainer width="100%" height="100%"><PieChart><Tooltip /><Pie data={chartReadySkills} dataKey="count" nameKey="skill" outerRadius={80} innerRadius={40}>{chartReadySkills.map((entry) => <Cell key={entry.skill} fill={entry.fill} />)}</Pie></PieChart></ResponsiveContainer></div>
-              <div className="space-y-2 mt-3 max-h-[200px] overflow-y-auto pr-2">{chartReadySkills.map((item) => <div key={item.skill} className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/40 px-3 py-2"><span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.skill}</span><span className="text-sm font-bold text-slate-900 dark:text-white">{item.count}</span></div>)}</div>
-            </>}
+        <div className="lg:col-span-1">
+          <ChartCard title="Pipeline Overview" subtitle="Application stage distribution" accent="yellow">
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+              {pipeline.length ? pipeline.map((item) => (
+                <div key={item.key} className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
+                  <div className="flex items-center gap-2"><StatusBadge status={item} /><span className="text-sm text-slate-500 dark:text-slate-400">{item.label}</span></div>
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">{item.count}</span>
+                </div>
+              )) : <div className="text-center py-8 text-slate-500 dark:text-slate-400">No pipeline data</div>}
+            </div>
           </ChartCard>
         </div>
       </div>
