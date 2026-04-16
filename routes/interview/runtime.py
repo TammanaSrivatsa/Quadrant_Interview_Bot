@@ -117,19 +117,8 @@ SUSPICIOUS_TYPES = {
 
 
 
-@router.get("/interview/{result_id}")
-
-def legacy_interview_entry(result_id: int, token: str | None = None) -> RedirectResponse:
-
-    """Redirect legacy backend interview URLs to the SPA pre-check route."""
-
-    target = interview_entry_url(result_id) or "/"
-
-    if token:
-
-        target = f"{target}?token={token}"
-
-    return RedirectResponse(url=target, status_code=307)
+# NOTE: Routes WITH specific paths MUST be registered BEFORE the wildcard /interview/{result_id}
+# because FastAPI matches in registration order, not by specificity.
 
 
 
@@ -3100,3 +3089,16 @@ def submit_interview_feedback(
     db.add(feedback)
     db.commit()
     return {"ok": True, "rating": rating}
+
+
+# ── LEGACY REDIRECT ──────────────────────────────────────────────────────────────────
+# MUST be at the END - catches any remaining /interview/{result_id} requests and redirects to SPA.
+# All specific /interview/{result_id}/... routes must be registered BEFORE this.
+
+@router.get("/interview/{result_id}")
+def legacy_interview_entry(result_id: int, token: str | None = None) -> RedirectResponse:
+    """Redirect legacy backend interview URLs to the SPA pre-check route."""
+    target = interview_entry_url(result_id) or "/"
+    if token:
+        target = f"{target}?token={token}"
+    return RedirectResponse(url=target, status_code=307)
