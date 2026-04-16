@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   Mic, MicOff, Send, MessageSquare, CheckCircle2,
   Activity, AlertTriangle, Eye, EyeOff, Brain,
-  Volume2, VolumeX,
+  Volume2, VolumeX, Loader2,
 } from "lucide-react";
 import { interviewApi, proctorApi } from "../services/api";
 import { cn } from "../utils/utils";
