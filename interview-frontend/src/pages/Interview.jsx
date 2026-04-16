@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   Mic, MicOff, Send, MessageSquare, CheckCircle2,
   Activity, AlertTriangle, Eye, EyeOff, Brain,
-  Volume2, VolumeX, Loader2,
+  Volume2, VolumeX,
 } from "lucide-react";
 import { interviewApi, proctorApi } from "../services/api";
 import { cn } from "../utils/utils";
@@ -88,8 +88,8 @@ function formatTime(seconds) {
 
 function appendTranscript(current, next) {
   const base = String(current || "").trim();
-  const t    = String(next   || "").trim();
-  if (!t)    return base;
+  const t = String(next || "").trim();
+  if (!t) return base;
   if (!base) return t;
   return `${base} ${t}`;
 }
@@ -112,9 +112,9 @@ function getPreferredAudioMimeType() {
 
 const EMOTION_COLOR = {
   confident: "text-emerald-400",
-  focused:   "text-blue-400",
-  neutral:   "text-slate-400",
-  nervous:   "text-amber-400",
+  focused: "text-blue-400",
+  neutral: "text-slate-400",
+  nervous: "text-amber-400",
 };
 
 function VoiceConfidenceBar({ metrics }) {
@@ -145,26 +145,26 @@ function TabSwitchAlert({ count }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Interview() {
   const { resultId } = useParams();
-  const navigate     = useNavigate();
+  const navigate = useNavigate();
 
-  const [sessionId,       setSessionId]       = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
-  const [questionNumber,  setQuestionNumber]  = useState(1);
-  const [maxQuestions,    setMaxQuestions]     = useState(1);
-  const [answer,          setAnswer]           = useState("");
-  const [isRecording,     setIsRecording]      = useState(false);
-  const [isTranscribing,  setIsTranscribing]   = useState(false);
-  const [timeLeft,        setTimeLeft]         = useState(0);
-  const [totalTimeLeft,   setTotalTimeLeft]    = useState(0);
+  const [questionNumber, setQuestionNumber] = useState(1);
+  const [maxQuestions, setMaxQuestions] = useState(1);
+  const [answer, setAnswer] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [totalTimeLeft, setTotalTimeLeft] = useState(0);
   const [totalTimeSeconds, setTotalTimeSeconds] = useState(1200);
-  const [transcripts,     setTranscripts]      = useState([]);
-  const [loading,         setLoading]          = useState(true);
-  const [isSubmitting,    setIsSubmitting]     = useState(false);
-  const [error,           setError]            = useState("");
+  const [transcripts, setTranscripts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
   const [transcriptionWarning, setTranscriptionWarning] = useState("");
-  const [previewReady,    setPreviewReady]     = useState(false);
-  const [previewWarning,  setPreviewWarning]   = useState("");
-  const [answerFeedback,  setAnswerFeedback]   = useState(null);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [previewWarning, setPreviewWarning] = useState("");
+  const [answerFeedback, setAnswerFeedback] = useState(null);
   const [proctorAlert, setProctorAlert] = useState("");
   const [ttsLoading, setTtsLoading] = useState(false);
 
@@ -173,14 +173,14 @@ export default function Interview() {
     return saved || "indian_female";
   })();
 
-  const videoRef             = useRef(null);
-  const autoSubmittedRef     = useRef(false);
-  const baselineCapturedRef  = useRef(false);
-  const streamRef            = useRef(null);
-  const audioStreamRef       = useRef(null);
-  const recorderRef          = useRef(null);
-  const recordedChunksRef    = useRef([]);
-  const answerStartTimeRef   = useRef(null);
+  const videoRef = useRef(null);
+  const autoSubmittedRef = useRef(false);
+  const baselineCapturedRef = useRef(false);
+  const streamRef = useRef(null);
+  const audioStreamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const answerStartTimeRef = useRef(null);
 
   // ── TTS ────────────────────────────────────────────────────────────────────
   const { speak, stop: stopSpeaking, speaking, muted, toggleMute } = useTTS();
@@ -223,8 +223,8 @@ export default function Interview() {
       setTotalTimeLeft(response.remaining_total_seconds || 0);
       setTotalTimeSeconds(response.total_time_seconds || 1200);
       baselineCapturedRef.current = false;
-      autoSubmittedRef.current    = false;
-      answerStartTimeRef.current  = Date.now();
+      autoSubmittedRef.current = false;
+      answerStartTimeRef.current = Date.now();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -248,7 +248,7 @@ export default function Interview() {
     return () => {
       clearTimeout(timer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion?.id, selectedVoice]);
 
   useEffect(() => {
@@ -343,7 +343,7 @@ export default function Interview() {
   useEffect(() => {
     if (!currentQuestion || loading || isSubmitting || answerFeedback) return;
     const id = setInterval(() => {
-      setTimeLeft((p)      => (p > 0 ? p - 1 : 0));
+      setTimeLeft((p) => (p > 0 ? p - 1 : 0));
       setTotalTimeLeft((p) => (p > 0 ? p - 1 : 0));
     }, 1000);
     return () => clearInterval(id);
@@ -365,7 +365,7 @@ export default function Interview() {
     setTranscriptionWarning("");
     setIsRecording(false);
     setIsTranscribing(false);
-    autoSubmittedRef.current   = false;
+    autoSubmittedRef.current = false;
     answerStartTimeRef.current = Date.now();
     setAnswerFeedback(null);
   }, [navigate, resultId, questionNumber, maxQuestions, stopSpeaking]);
@@ -373,9 +373,9 @@ export default function Interview() {
   // ── submit answer ──────────────────────────────────────────────────────────
   const submitAnswer = useCallback(async ({ skipCurrent = false, answerOverride } = {}) => {
     if (!sessionId || !currentQuestion) return;
-    const resolvedAnswer  = skipCurrent ? "" : String(answerOverride ?? answer);
+    const resolvedAnswer = skipCurrent ? "" : String(answerOverride ?? answer);
     const normalizedAnswer = resolvedAnswer.trim();
-    const durationSeconds  = answerStartTimeRef.current
+    const durationSeconds = answerStartTimeRef.current
       ? (Date.now() - answerStartTimeRef.current) / 1000 : 0;
 
     setIsSubmitting(true);
@@ -383,10 +383,10 @@ export default function Interview() {
     try {
       const timeTaken = Math.max(0, (currentQuestion.allotted_seconds || 0) - timeLeft);
       const response = await interviewApi.submitAnswer({
-        session_id:  sessionId,
+        session_id: sessionId,
         question_id: currentQuestion.id,
         answer_text: skipCurrent ? "" : resolvedAnswer,
-        skipped:     skipCurrent || !normalizedAnswer,
+        skipped: skipCurrent || !normalizedAnswer,
         time_taken_sec: timeTaken,
       });
 
@@ -507,15 +507,15 @@ export default function Interview() {
     if (!sessionId || !videoRef.current || !previewReady) return;
     try {
       const canvas = document.createElement("canvas");
-      const ctx    = canvas.getContext("2d");
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      canvas.width  = videoRef.current.videoWidth  || 320;
+      canvas.width = videoRef.current.videoWidth || 320;
       canvas.height = videoRef.current.videoHeight || 240;
       ctx.drawImage(videoRef.current, 0, 0);
       const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.7));
       if (blob) {
         const res = await proctorApi.uploadFrame(sessionId, blob, eventType);
-        
+
         // NEW: Real-time proctoring alerts to candidate
         if (res && res.frame_reasons && res.frame_reasons.length > 0) {
           setProctorAlert(res.frame_reasons[0]);
@@ -638,11 +638,11 @@ export default function Interview() {
 
           {/* Total Time Progress Bar */}
           <div className="bg-slate-900/50 border border-slate-800/50 h-3 rounded-full overflow-hidden mb-2 relative">
-            <div 
+            <div
               className={cn(
                 "h-full transition-all duration-1000 ease-linear",
                 (totalTimeLeft / totalTimeSeconds) > 0.5 ? "bg-emerald-500" :
-                (totalTimeLeft / totalTimeSeconds) > 0.2 ? "bg-amber-500" : "bg-red-500"
+                  (totalTimeLeft / totalTimeSeconds) > 0.2 ? "bg-amber-500" : "bg-red-500"
               )}
               style={{ width: `${Math.min(100, (totalTimeLeft / totalTimeSeconds) * 100)}%` }}
             />
@@ -719,8 +719,8 @@ export default function Interview() {
                 </h4>
                 <div className="flex items-center gap-2">
                   <span className={cn("w-2 h-2 rounded-full",
-                    isRecording    ? "bg-red-500 animate-pulse" :
-                    isTranscribing ? "bg-amber-500 animate-pulse" : "bg-emerald-500")} />
+                    isRecording ? "bg-red-500 animate-pulse" :
+                      isTranscribing ? "bg-amber-500 animate-pulse" : "bg-emerald-500")} />
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     {isRecording ? "Listening…" : isTranscribing ? "Transcribing…" : "Ready"}
                   </span>
@@ -752,7 +752,7 @@ export default function Interview() {
                         detail: `Candidate pasted ${pastedText.length} characters`,
                         timestamp: new Date().toISOString(),
                         meta: { length: pastedText.length },
-                      }).catch(() => {});
+                      }).catch(() => { });
                     }
                   }
                 }}
@@ -846,10 +846,10 @@ export default function Interview() {
             {/* Status grid */}
             <div className="grid grid-cols-2 gap-2">
               {[
-                ["Video",   previewReady ? "Active"    : "Off",    previewReady],
-                ["Session", sessionId    ? `#${sessionId}` : "—", !!sessionId],
+                ["Video", previewReady ? "Active" : "Off", previewReady],
+                ["Session", sessionId ? `#${sessionId}` : "—", !!sessionId],
                 ["Emotion", emotionEnabled ? (emotionSignal?.emotion || "—") : "Disabled", emotionEnabled],
-                ["Tabs",    tabSwitchCount > 0 ? `${tabSwitchCount} switch${tabSwitchCount > 1 ? "es" : ""}` : "Clean", tabSwitchCount === 0],
+                ["Tabs", tabSwitchCount > 0 ? `${tabSwitchCount} switch${tabSwitchCount > 1 ? "es" : ""}` : "Clean", tabSwitchCount === 0],
               ].map(([label, value, ok]) => (
                 <div key={label} className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5">
                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{label}</p>
@@ -908,24 +908,24 @@ export default function Interview() {
                 </div>
               )}
               {proctoringEvents.map((ev, i) => {
-                const isAlert   = ev.type === "TAB_SWITCH";
+                const isAlert = ev.type === "TAB_SWITCH";
                 const isEmotion = ev.type === "EMOTION";
-                const isVoice   = ev.type === "VOICE_CONFIDENCE";
+                const isVoice = ev.type === "VOICE_CONFIDENCE";
                 return (
                   <div key={i} className={cn(
                     "flex items-start gap-2 px-2.5 py-2 rounded-lg text-[10px] border",
-                    isAlert   ? "bg-red-500/10 border-red-500/30 text-red-400"      :
-                    isEmotion ? "bg-blue-500/10 border-blue-500/20 text-blue-400"   :
-                    isVoice   ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                                "bg-slate-800/50 border-slate-700/50 text-slate-500"
+                    isAlert ? "bg-red-500/10 border-red-500/30 text-red-400" :
+                      isEmotion ? "bg-blue-500/10 border-blue-500/20 text-blue-400" :
+                        isVoice ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                          "bg-slate-800/50 border-slate-700/50 text-slate-500"
                   )}>
                     <span className="font-black flex-shrink-0">
                       {isAlert ? "⚠" : isEmotion ? "😐" : isVoice ? "🎤" : "·"}
                     </span>
                     <span className="font-bold leading-tight">
-                      {isAlert   && "Tab switch detected"}
+                      {isAlert && "Tab switch detected"}
                       {isEmotion && `Emotion: ${ev.emotion} (${Math.round(ev.confidence * 100)}%)`}
-                      {isVoice   && `Voice: ${ev.confidence_score >= 0.7 ? "confident" : "hesitant"} · ${ev.speaking_rate}wpm`}
+                      {isVoice && `Voice: ${ev.confidence_score >= 0.7 ? "confident" : "hesitant"} · ${ev.speaking_rate}wpm`}
                       {!isAlert && !isEmotion && !isVoice && ev.type}
                     </span>
                     <span className="ml-auto flex-shrink-0 opacity-50">
