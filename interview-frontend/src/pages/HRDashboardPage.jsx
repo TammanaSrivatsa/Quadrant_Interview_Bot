@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, UserCheck, UserX, CheckCircle2, Plus, Calendar, BarChart3, Sparkles, TrendingUp } from "lucide-react";
+import { Users, UserCheck, UserX, CheckCircle2, Plus, BarChart3, Sparkles, TrendingUp } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
 import MetricCard from "../components/MetricCard";
 import CandidateTable from "../components/CandidateTable";
