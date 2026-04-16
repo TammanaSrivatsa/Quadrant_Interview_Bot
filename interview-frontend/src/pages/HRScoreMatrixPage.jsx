@@ -106,8 +106,8 @@ export default function HRScoreMatrixPage() {
           candidate.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
           String(candidate.candidate_uid || "").toLowerCase().includes(searchTerm.toLowerCase());
         const matchesJd = jdFilter === "all" || String(candidate.jobId) === jdFilter || candidate.jobTitle === jdFilter;
-        const matchesStatus = statusFilter === "all" || candidate.interviewStatus?.key === statusFilter;
-        const matchesDecision = decisionFilter === "all" || candidate.finalDecision?.key === decisionFilter;
+        const matchesStatus = statusFilter === "all" || candidate.status?.key === statusFilter;
+        const matchesDecision = decisionFilter === "all" || (candidate.finalDecision?.key || candidate.status?.key) === decisionFilter;
         return matchesSearch && matchesJd && matchesStatus && matchesDecision;
       })
       .sort((left, right) => {
@@ -146,7 +146,7 @@ export default function HRScoreMatrixPage() {
       if (!map[key]) map[key] = { label, count: 0, scores: [], shortlisted: 0 };
       map[key].count++;
       if (r.finalAIScore > 0) map[key].scores.push(r.finalAIScore);
-      if (r.finalDecision?.key === "shortlisted" || r.finalDecision?.key === "selected") map[key].shortlisted++;
+      if ((r.finalDecision?.key === "shortlisted" || r.finalDecision?.key === "selected") || (r.status?.key === "shortlisted" || r.status?.key === "selected")) map[key].shortlisted++;
     });
     return Object.entries(map).map(([key, val]) => ({
       key,
@@ -160,7 +160,7 @@ export default function HRScoreMatrixPage() {
   const resumeScores = filteredCandidates.map((c) => c.resumeScore);
   const interviewScores = filteredCandidates.map((c) => c.interviewScore).filter((v) => v > 0);
   const finalScores = filteredCandidates.map((c) => c.finalAIScore);
-  const shortlistedCount = filteredCandidates.filter((c) => c.finalDecision?.key === "shortlisted" || c.finalDecision?.key === "selected").length;
+  const shortlistedCount = filteredCandidates.filter((c) => (c.finalDecision?.key === "shortlisted" || c.finalDecision?.key === "selected") || (c.status?.key === "shortlisted" || c.status?.key === "selected")).length;
 
   if (loading && !rows.length) return <p className="center muted py-12">Loading candidate score matrix...</p>;
 

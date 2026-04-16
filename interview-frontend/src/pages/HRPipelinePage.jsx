@@ -27,7 +27,7 @@ function getCandidateJdId(candidate) {
 }
 
 function CandidateCard({ candidate, onQuickAction, quickActionLoadingId }) {
-  const currentStage = normalizeStageKey(candidate?.interviewStatus?.key);
+  const currentStage = normalizeStageKey(candidate?.status?.key);
   const isUpdating = quickActionLoadingId === candidate?.result_id;
 
   return (
@@ -118,7 +118,7 @@ export default function HRPipelinePage() {
   const groupedCandidates = useMemo(() => {
     const groups = Object.fromEntries(PIPELINE_STAGES.map((stage) => [stage.key, []]));
     for (const candidate of filteredCandidates) {
-      const stageKey = normalizeStageKey(candidate?.interviewStatus?.key);
+      const stageKey = normalizeStageKey(candidate?.status?.key);
       if (groups[stageKey]) {
         groups[stageKey].push(candidate);
       } else {
@@ -133,7 +133,7 @@ export default function HRPipelinePage() {
     const counts = {};
     PIPELINE_STAGES.forEach((stage) => { counts[stage.key] = 0; });
     filteredCandidates.forEach((candidate) => {
-      const key = normalizeStageKey(candidate?.interviewStatus?.key);
+      const key = normalizeStageKey(candidate?.status?.key);
       counts[key] = (counts[key] || 0) + 1;
     });
     return counts;
@@ -148,17 +148,17 @@ export default function HRPipelinePage() {
     const normalizedStage = normalizeStageKey(nextStage);
     setCandidates((current) => current.map((item) => item.result_id === candidateId ? {
       ...item,
-      interviewStatus: {
-        ...(item.interviewStatus || {}),
+      status: {
         key: normalizedStage,
         label: PIPELINE_STAGES.find((stage) => stage.key === normalizedStage)?.label || normalizedStage,
+        tone: PIPELINE_STAGES.find((stage) => stage.key === normalizedStage)?.tone || "secondary",
       },
     } : item));
   }
 
   async function persistStageChange(candidate, nextStage, notePrefix = "Updated from HR pipeline") {
     const normalizedStage = normalizeStageKey(nextStage);
-    const currentStage = normalizeStageKey(candidate?.interviewStatus?.key);
+    const currentStage = normalizeStageKey(candidate?.status?.key);
     if (!candidate?.result_id || currentStage === normalizedStage) return;
 
     const previousCandidates = candidates;

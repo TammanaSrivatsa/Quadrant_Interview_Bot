@@ -90,7 +90,7 @@ export default function HRCandidatesPage() {
         const role = String(candidate?.role || "").toLowerCase();
         const query = searchTerm.toLowerCase();
         const matchesSearch = !query || name.includes(query) || email.includes(query) || candidateUid.includes(query) || role.includes(query);
-        const matchesStatus = statusFilter === "all" || candidate?.interviewStatus?.key === statusFilter;
+        const matchesStatus = statusFilter === "all" || candidate?.status?.key === statusFilter;
         const assignedJdId = String(candidate?.assignedJd?.id || candidate?.job?.id || "");
         const matchesJd = jdFilter === "all" || assignedJdId === String(jdFilter);
         const finalScore = Number(candidate?.finalAIScore || 0);
@@ -111,7 +111,7 @@ export default function HRCandidatesPage() {
     const counts = {};
     ATS_STAGE_DEFINITIONS.forEach((stage) => { counts[stage.key] = 0; });
     allCandidates.forEach((candidate) => {
-      const key = candidate?.interviewStatus?.key || "applied";
+      const key = candidate?.status?.key || "applied";
       counts[key] = (counts[key] || 0) + 1;
     });
     return counts;
@@ -201,7 +201,7 @@ export default function HRCandidatesPage() {
       candidate?.matchPercent || 0,
       candidate?.finalAIScore || 0,
       candidate?.recommendationTag || "–",
-      candidate?.interviewStatus?.label || "–",
+      candidate?.status?.label || "–",
     ]);
     const csvContent = [header, ...rows].map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -396,7 +396,7 @@ export default function HRCandidatesPage() {
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 truncate max-w-[200px]">{candidateEmail}</td>
                   <td className="px-4 py-3"><ScoreBadge score={candidate?.matchPercent || 0} /></td>
                   <td className="px-4 py-3"><ScoreBadge score={candidate?.finalAIScore || 0} /></td>
-                  <td className="px-4 py-3"><StatusBadge status={candidate?.interviewStatus} /></td>
+                  <td className="px-4 py-3"><StatusBadge status={candidate?.status} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Link 

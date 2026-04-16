@@ -171,8 +171,8 @@ export default function HRAnalyticsPage() {
       map[role].count++;
       if (c.resumeScore > 0) map[role].scores.push(c.resumeScore);
       if (c.interviewScore > 0) map[role].interview.push(c.interviewScore);
-      if (c.finalDecision?.key === "shortlisted" || c.finalDecision?.key === "selected") map[role].shortlisted++;
-      if (c.interviewStatus?.key === "completed") map[role].completed++;
+      if ((c.finalDecision?.key === "shortlisted" || c.finalDecision?.key === "selected") || (c.status?.key === "shortlisted" || c.status?.key === "selected")) map[role].shortlisted++;
+      if ((c.status?.key === "completed" || c.status?.key === "interview_completed") || c.interviewScore > 0) map[role].completed++;
     });
     return Object.entries(map).map(([role, d]) => ({
       role,
@@ -187,7 +187,7 @@ export default function HRAnalyticsPage() {
 
   // Interview performance analysis — what's going wrong?
   const perfAnalysis = useMemo(() => {
-    const completedCandidates = filtered.filter((c) => c.interviewStatus?.key === "completed" || c.interviewScore > 0);
+    const completedCandidates = filtered.filter((c) => (c.status?.key === "completed" || c.status?.key === "interview_completed") || c.interviewScore > 0);
     if (!completedCandidates.length) return null;
     const avgResume = completedCandidates.reduce((s, c) => s + c.resumeScore, 0) / completedCandidates.length;
     const avgInterview = completedCandidates.reduce((s, c) => s + c.interviewScore, 0) / completedCandidates.length;
