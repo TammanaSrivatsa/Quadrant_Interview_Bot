@@ -260,6 +260,108 @@ Frontend URL: `http://localhost:5173`
 
 ---
 
+## Interview Flow (Detailed)
+
+### The Complete Interview Routing Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                         INTERVIEW FLOW DIAGRAM                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+1. CANDIDATE DASHBOARD
+   └── "Start Interview" button → /interview/{resultId} (PreCheck)
+
+2. PRE-CHECK (/interview/:resultId)
+   ├── Check: Camera, Microphone, Internet, Voice Recorder
+   ├── User clicks "Start Interview"
+   ├── POST /api/interview/{resultId}/access  → Validates access state
+   │   - Must be shortlisted (result.shortlisted = true)
+   │   - Must have interview_date scheduled
+   │   - Must not have completed session
+   │   - Generates question bank if needed
+   ├── On success: Store consent in sessionStorage
+   │   sessionStorage.setItem(`interview-consent:${resultId}`, "true")
+   └── Navigate → /interview/{resultId}/live
+
+3. LIVE INTERVIEW (/interview/:resultId/live)
+   ├── Component mounts → useEffect triggers loadSession()
+   ├── READ consent from sessionStorage
+   ├── POST /api/interview/start
+   │   {
+   │     result_id: Number(resultId),
+   │     consent_given: (from sessionStorage)
+   │   }
+   ├── BACKEND:
+   │   a. Validate candidate owns the result
+   │   b. Check interview_access_state (shortlisted, scheduled, not completed)
+   │   c. Create InterviewSession (if not exists)
+   │   d. Materialize questions from result.interview_questions
+   │   e. Return first question
+   └── Frontend: Display question, start TTS, begin recording
+```
+
+### Interview Access Rules
+
+Located in `routes/common.py` - function `interview_access_state()`:
+
+| Condition | Result |
+|----------|--------|
+| `result.shortlisted` is False | Locked: "shortlist_required" |
+| `result.interview_date` is empty | Locked: "schedule_required" |
+| Existing session status = "in_progress" | Ready (can resume) |
+| Existing session ended/completed/selected/rejected | Locked: "already_completed" |
+| Otherwise | Ready to start |
+
+### Backend Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/interview/{result_id}/access` | Pre-validation + question bank prep |
+| `POST /api/interview/start` | Start/create session, return first question |
+| `POST /api/interview/answer` | Submit answer, get next question |
+| `GET /api/interview/{result_id}` | Legacy redirect to SPA |
+
+### Common Interview Issues
+
+#### Issue: "Interview questions are not ready yet"
+**Cause**: Question bank not generated or failed generation
+**Fix**: 
+1. Ensure JD has `question_count` set (default 8)
+2. Check that resume was uploaded and scored
+3. Verify `result.interview_questions` has data
+
+#### Issue: "Only shortlisted candidates can start interviews"  
+**Cause**: Candidate not shortlisted by HR
+**Fix**: HR must shortlist candidate in HR dashboard
+
+#### Issue: "Schedule your interview before starting"
+**Cause**: No interview_date set
+**Fix**: Candidate must select interview date first via `/api/candidate/select-interview-date`
+
+#### Issue: "Interview session is already in progress"
+**Cause**: Resume functionality - session exists
+**Fix**: Session auto-completes after all questions answered or time runs out
+
+### Interview Entry URL Format
+
+Generated in `routes/common.py` - function `interview_entry_url()`:
+
+```python
+# CloudFront/Vercel deployments:
+return f"{base_url}/#/interview/{int(result_id)}"
+
+# Other deployments:  
+return f"{base_url}/interview/{int(result_id)}"
+```
+
+Frontend routes in `App.jsx`:
+- `/interview/:resultId` → PreCheck component
+- `/interview/:resultId/live` → Interview component  
+- `/interview/:resultId/completed` → Completed component
+
+---
+
 ## Operational Notes
 - **Startup Migrations**: `main.py` runs `ensure_schema()` to backfill columns on existing SQLite DBs (non-breaking).
 - **Proctoring Integrity**: Webcam snapshots are only saved for suspicious events (no-face, high-motion, face-mismatch) to save disk space. Max 50 frames per session.

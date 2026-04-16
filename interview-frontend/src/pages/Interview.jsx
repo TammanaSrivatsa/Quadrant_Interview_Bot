@@ -196,16 +196,20 @@ export default function Interview() {
 
   // ── session load ───────────────────────────────────────────────────────────
   const loadSession = useCallback(async () => {
+    console.log("[Interview] loadSession called, resultId:", resultId);
     setLoading(true);
     setError("");
     try {
       const consentGiven = sessionStorage.getItem(`interview-consent:${resultId}`) === "true";
+      console.log("[Interview] consentGiven:", consentGiven);
       const response = await interviewApi.start({
         result_id: Number(resultId),
         consent_given: consentGiven,
       });
+      console.log("[Interview] API response:", response);
 
       if (response.interview_completed || !response.current_question) {
+        console.log("[Interview] No question/completed, redirecting to completed");
         navigate(`/interview/${resultId}/completed`, { replace: true });
         return;
       }
@@ -222,6 +226,7 @@ export default function Interview() {
       autoSubmittedRef.current    = false;
       answerStartTimeRef.current  = Date.now();
     } catch (e) {
+      console.error("[Interview] loadSession error:", e.message, e);
       setError(e.message);
     } finally {
       setLoading(false);
@@ -572,8 +577,25 @@ export default function Interview() {
   }, [currentQuestion, handleSubmit, isSubmitting, isTranscribing, timeLeft, answerFeedback]);
 
   // ── render ─────────────────────────────────────────────────────────────────
-  if (loading) return <p className="center muted">Starting interview session...</p>;
-  if (error && !currentQuestion) return <p className="alert error">{error}</p>;
+  if (loading) return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <p className="text-white text-xl">Starting interview session...</p>
+    </div>
+  );
+  if (error && !currentQuestion) return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="bg-red-900/50 border border-red-500 p-6 rounded-2xl max-w-md text-center">
+        <p className="text-red-400 font-bold text-lg mb-2">Cannot Start Interview</p>
+        <p className="text-red-300 mb-4">{error}</p>
+        <button 
+          onClick={() => navigate(`/interview/${resultId}`)}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-bold"
+        >
+          Go Back to Pre-Check
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 font-sans p-4 lg:p-6">
