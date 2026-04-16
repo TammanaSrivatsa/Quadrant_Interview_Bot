@@ -200,13 +200,17 @@ export default function Interview() {
     setLoading(true);
     setError("");
     try {
+      console.log("[Interview] Making API call...");
       const consentGiven = sessionStorage.getItem(`interview-consent:${resultId}`) === "true";
       console.log("[Interview] consentGiven:", consentGiven);
+      
       const response = await interviewApi.start({
         result_id: Number(resultId),
         consent_given: consentGiven,
       });
-      console.log("[Interview] API response:", response);
+      
+      console.log("[Interview] API SUCCESS! response:", JSON.stringify(response).substring(0, 500));
+      console.log("[Interview] session_id:", response.session_id, "current_question:", !!response.current_question);
 
       if (response.interview_completed || !response.current_question) {
         console.log("[Interview] No question/completed, redirecting to completed");
@@ -214,6 +218,7 @@ export default function Interview() {
         return;
       }
 
+      console.log("[Interview] Setting state...");
       setSessionId(response.session_id);
       sessionStorage.setItem(`session-id:${resultId}`, String(response.session_id));
       setCurrentQuestion(response.current_question);
@@ -225,11 +230,14 @@ export default function Interview() {
       baselineCapturedRef.current = false;
       autoSubmittedRef.current    = false;
       answerStartTimeRef.current  = Date.now();
+      
+      console.log("[Interview] State set complete!");
     } catch (e) {
-      console.error("[Interview] loadSession error:", e.message, e);
+      console.error("[Interview] loadSession ERROR:", e.message, e);
       setError(e.message);
     } finally {
       setLoading(false);
+      console.log("[Interview] Finally - loading set to false");
     }
   }, [navigate, resultId]);
 
@@ -689,17 +697,17 @@ export default function Interview() {
               <button
                 type="button"
                 onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "", selectedVoice)}
-                disabled={ttsLoading}
+                disabled={speaking}
                 title={speaking ? "Stop" : "Read question aloud (Indian accent)"}
                 className={cn(
                   "flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border transition-all",
                   speaking
                     ? "bg-blue-600 border-blue-500 text-white"
                     : "bg-slate-800 border-slate-700 text-slate-400 hover:text-blue-400 hover:border-blue-600",
-                  ttsLoading && "opacity-50 cursor-wait"
+                  speaking && "opacity-50 cursor-wait"
                 )}
               >
-                {ttsLoading ? (
+                {speaking ? (
                   <Loader2 size={18} className="animate-spin" />
                 ) : speaking ? (
                   <span className="flex gap-0.5">

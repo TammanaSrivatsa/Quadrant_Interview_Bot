@@ -44,12 +44,16 @@ function extractErrorMessage(error) {
 
 async function request(config) {
   try {
-    console.log(`[API] ${config.method} ${config.url}`, config.data instanceof FormData ? 'FormData' : '');
+    console.log(`[API] Request: ${config.method} ${config.url}`, config.data ? 'with data' : '');
+    console.log(`[API] Request data:`, JSON.stringify(config.data));
     const response = await apiClient(config);
-    console.log(`[API] Success: ${config.url}`);
+    console.log(`[API] Response status:`, response.status);
+    console.log(`[API] Response headers:`, response.headers);
+    console.log(`[API] Response data:`, JSON.stringify(response.data).substring(0, 200));
     return response.data;
   } catch (error) {
     console.error(`[API] Error: ${config.url}`, error.message);
+    console.error(`[API] Error response:`, error.response?.data);
     throw new Error(extractErrorMessage(error));
   }
 }
