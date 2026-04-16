@@ -556,42 +556,48 @@ def candidate_practice_kit(
     current_user: SessionUser = Depends(require_role("candidate")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    candidate = get_candidate_or_404(db, current_user.user_id)
-    if not candidate.resume_path:
-        raise HTTPException(status_code=400, detail="Upload your resume before starting practice mode")
+    try:
+        candidate = get_candidate_or_404(db, current_user.user_id)
+        if not candidate.resume_path:
+            raise HTTPException(status_code=400, detail="Upload your resume before starting practice mode")
 
-    selected_jd_id = job_id or candidate.selected_jd_id
-    if not selected_jd_id:
-        raise HTTPException(status_code=400, detail="Select a JD before starting practice mode")
+        selected_jd_id = job_id or candidate.selected_jd_id
+        if not selected_jd_id:
+            raise HTTPException(status_code=400, detail="Select a JD before starting practice mode")
 
-    selected_jd = _selected_jd_or_404(db, selected_jd_id)
-    resume_text = (candidate.resume_text or "").strip()
-    if not resume_text:
-        raise HTTPException(status_code=400, detail="Resume text is not available. Please re-upload your resume.")
+        selected_jd = _selected_jd_or_404(db, selected_jd_id)
+        resume_text = (candidate.resume_text or "").strip()
+        if not resume_text:
+            raise HTTPException(status_code=400, detail="Resume text is not available. Please re-upload your resume.")
 
-    practice = build_practice_kit(
-        resume_text=resume_text,
-        jd_title=selected_jd.title,
-        jd_skill_scores=selected_jd.weights_json or {},
-        question_count=int(selected_jd.total_questions if selected_jd.total_questions is not None else 6),
-    )
-    score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
-    advice = build_resume_advice(
-        resume_text=resume_text,
-        jd_skill_scores=selected_jd.weights_json or {},
-        explanation=explanation,
-        candidate_name=getattr(candidate, 'name', None) or None,
-    )
+        practice = build_practice_kit(
+            resume_text=resume_text,
+            jd_title=selected_jd.title,
+            jd_skill_scores=selected_jd.weights_json or {},
+            question_count=int(selected_jd.total_questions if selected_jd.total_questions is not None else 6),
+        )
+        score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
+        advice = build_resume_advice(
+            resume_text=resume_text,
+            jd_skill_scores=selected_jd.weights_json or {},
+            explanation=explanation,
+            candidate_name=getattr(candidate, 'name', None) or None,
+        )
 
-    return {
-        "ok": True,
-        "jd": {
-            "id": selected_jd.id,
-            "title": selected_jd.title,
-            "qualify_score": float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
-            "total_questions": int(selected_jd.total_questions if selected_jd.total_questions is not None else 8),
-        },
-        "practice": practice,
-        "resume_advice": advice,
-        "score_preview": score,
-    }
+        return {
+            "ok": True,
+            "jd": {
+                "id": selected_jd.id,
+                "title": selected_jd.title,
+                "qualify_score": float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
+                "total_questions": int(selected_jd.total_questions if selected_jd.total_questions is not None else 8),
+            },
+            "practice": practice,
+            "resume_advice": advice,
+            "score_preview": score,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error in practice-kit endpoint")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
