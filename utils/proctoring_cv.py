@@ -13,40 +13,15 @@ except Exception:  # pragma: no cover - runtime dependency fallback
     cv2 = None
     np = None
 
-try:
-    import mediapipe as mp  # type: ignore
-    from mediapipe.tasks import python  # type: ignore
-    from mediapipe.tasks.python import vision  # type: ignore
-    _MEDIAPIPE_AVAILABLE = True
-except Exception:
-    mp = None
-    _MEDIAPIPE_AVAILABLE = False
-
 _FACE_CASCADE = None
 _UPPER_BODY_CASCADE = None
-_MP_FACE_DETECTOR = None
 
 if cv2 is not None:
     _FACE_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     _UPPER_BODY_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_upperbody.xml")
 
-if _MEDIAPIPE_AVAILABLE and cv2 is not None:
-    try:
-        base_options = python.BaseOptions(model_asset_path="mediapipe/tasks/vision/face_liveness_detector/float32.tflite")
-        options = vision.FaceLivenessDetectorOptions(base_options=base_options)
-        _MP_FACE_DETECTOR = vision.FaceLivenessDetector.from_options(options)
-    except Exception:
-        _MP_FACE_DETECTOR = None
-
 _LAST_FRAMES: dict[int, Any] = {}
 _LAST_PERIODIC_SAVE: dict[int, float] = {}
-_MP_FACE_MESH = None
-
-if _MEDIAPIPE_AVAILABLE and cv2 is not None:
-    try:
-        _MP_FACE_MESH = mp.solutions.face_mesh
-    except Exception:
-        _MP_FACE_MESH = None
 
 
 def analyze_frame(session_id: int, raw_bytes: bytes) -> dict[str, object]:
@@ -81,31 +56,9 @@ def analyze_frame(session_id: int, raw_bytes: bytes) -> dict[str, object]:
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        faces_count = 0
-        face_box = None
-        face_quality_score = None
-        
-        if _MP_FACE_MESH is not None:
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            with _MP_FACE_MESH.FaceMesh(max_num_faces=4, refine_landmarks=False) as face_mesh:
-                results = face_mesh.process(rgb_frame)
-                if results.multi_face_landmarks:
-                    faces_count = len(results.multi_face_landmarks)
-                    if faces_count == 1:
-                        landmarks = results.multi_face_landmarks[0]
-                        h, w = frame.shape[:2]
-                        x_coords = [int(lm.x * w) for lm in landmarks]
-                        y_coords = [int(lm.y * h) for lm in landmarks]
-                        x_min, x_max = min(x_coords), max(x_coords)
-                        y_min, y_max = min(y_coords), max(y_coords)
-                        face_box = (x_min, y_min, x_max - x_min, y_max - y_min)
-                        
-                        face_quality_score = _calculate_face_quality(landmarks, w, h)
-        
-        if faces_count == 0:
-            faces = _FACE_CASCADE.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(50, 50))
-            faces_count = int(len(faces))
-            face_box = _as_box(faces[0]) if faces_count == 1 else None
+        faces = _FACE_CASCADE.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(50, 50))
+        faces_count = int(len(faces))
+        face_box = _as_box(faces[0]) if faces_count == 1 else None
         
         face_signature = _face_signature(gray, face_box) if face_box else None
         motion_score = _motion_score(session_id, gray)
@@ -117,14 +70,12 @@ def analyze_frame(session_id: int, raw_bytes: bytes) -> dict[str, object]:
             "motion_score": float(motion_score),
             "face_signature": face_signature,
             "face_box": face_box,
-            "face_quality_score": face_quality_score,
             "upper_bodies_count": int(shoulder_data["upper_bodies_count"]),
             "left_shoulder_visibility": shoulder_data["left_shoulder_visibility"],
             "right_shoulder_visibility": shoulder_data["right_shoulder_visibility"],
             "shoulder_score": shoulder_data["shoulder_score"],
             "shoulder_present": shoulder_data["shoulder_present"],
             "shoulder_model_enabled": shoulder_data["shoulder_model_enabled"],
-            "mediapipe_enabled": _MP_FACE_MESH is not None,
             "error": None,
             "opencv_enabled": True,
         }
@@ -203,7 +154,6 @@ def _face_signature(gray_frame: Any, face_box: tuple[int, int, int, int] | None)
 
 def _shoulder_metrics(
     gray_frame: Any,
-    faces: Any,
     face_box: tuple[int, int, int, int] | None,
 ) -> dict[str, object]:
     if cv2 is None or np is None or not _is_cascade_ready(_UPPER_BODY_CASCADE):
@@ -288,8 +238,6 @@ def _shoulder_metrics(
     right_visibility = _clamp((0.55 * right_margin_score) + (0.45 * quality))
     cascade_score = _clamp(min(left_visibility, right_visibility))
 
-    # Blend with fallback heuristic so valid frames are not punished when
-    # upper-body landmarks are weak due to lighting/background.
     fallback_left, fallback_right, fallback_score = _fallback_shoulder_score(gray_frame, face_box)
     left_visibility = _clamp(max(left_visibility, 0.8 * fallback_left))
     right_visibility = _clamp(max(right_visibility, 0.8 * fallback_right))
@@ -388,45 +336,6 @@ def _fallback_shoulder_score(
 
     shoulder_score = _clamp((0.55 * min(left_score, right_score)) + (0.25 * vertical_score) + (0.20 * distance_score))
     return left_score, right_score, shoulder_score
-
-
-def _calculate_face_quality(landmarks: Any, frame_width: int, frame_height: int) -> float:
-    """Calculate face quality score using MediaPipe landmarks.
-    
-    Quality factors:
-    - Face centered in frame
-    - Good lighting (brightness variance)
-    - Face not too small or too large
-    - Clear features (not blurry)
-    """
-    if not landmarks:
-        return 0.0
-    
-    try:
-        face_width = max([int(lm.x * frame_width) for lm in landmarks]) - min([int(lm.x * frame_width) for lm in landmarks])
-        face_height = max([int(lm.y * frame_height) for lm in landmarks]) - min([int(lm.y * frame_height) for lm in landmarks])
-        
-        center_x = (min([int(lm.x * frame_width) for lm in landmarks]) + face_width / 2) / frame_width
-        center_y = (min([int(lm.y * frame_height) for lm in landmarks]) + face_height / 2) / frame_height
-        
-        center_score = 1.0 - ((abs(center_x - 0.5) + abs(center_y - 0.5)))
-        center_score = _clamp(center_score * 2)
-        
-        size_score = _clamp((0.3 - abs(face_width / frame_width - 0.3)) / 0.15) if face_width / frame_width < 0.3 else _clamp((0.5 - abs(face_width / frame_width - 0.4)) / 0.2)
-        
-        nose_tip = landmarks[1]
-        nose_x, nose_y = int(nose_tip.x * frame_width), int(nose_tip.y * frame_height)
-        
-        left_eye = landmarks[33]
-        right_eye = landmarks[263]
-        eye_distance = abs(left_eye.x - right_eye.x) * frame_width
-        
-        eye_clarity = _clamp(eye_distance / 50)
-        
-        quality = (0.4 * center_score) + (0.25 * size_score) + (0.35 * eye_clarity)
-        return round(quality, 4)
-    except Exception:
-        return 0.5
 
 
 def save_baseline_image(session_id: int, raw_bytes: bytes) -> str | None:
