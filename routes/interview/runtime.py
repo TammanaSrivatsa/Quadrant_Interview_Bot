@@ -1354,6 +1354,8 @@ def interview_access(
 
     access = interview_access_state(result)
 
+    schedule = interview_schedule_state(result)
+
     latest_session = _latest_interview_session(db, result)
 
     job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
