@@ -7,9 +7,15 @@ load_dotenv()
 
 class Config:
     # Security
-    SECRET_KEY = os.getenv("SECRET_KEY", "2e7c1b7e8a9f4c2d8b1a6e5f3c4d7a8b9e0f1c2b3a4d5e6f7b8c9d0e1f2a3b4c")
+    # CRITICAL: No default SECRET_KEY - must be set in environment variables
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY must be set in environment variables. Run: openssl rand -hex 32")
     ALGORITHM = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
+
+    # Upload limits
+    MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
 
     # Google OAuth
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")

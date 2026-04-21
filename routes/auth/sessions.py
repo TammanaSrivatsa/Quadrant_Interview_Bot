@@ -9,9 +9,12 @@ import time
 import secrets
 import os
 import shutil
+import logging
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
+
+logger = logging.getLogger(__name__)
 
 from auth import hash_password, password_needs_upgrade, verify_password
 from core.config import config
@@ -30,6 +33,14 @@ _rate_limit_store: dict[str, deque] = defaultdict(deque)
 RATE_LIMIT_WINDOW = 300  # 5 minutes
 RATE_LIMIT_MAX = 10       # max attempts per window
 
+# ── Account Lockout ───────────────────────────────────────────────────────
+# In-memory store for locked accounts (email -> unlock_time)
+_locked_accounts: dict[str, datetime] = {}
+# Track failed attempts per email
+_failed_attempts: dict[str, int] = {}
+LOCKOUT_DURATION = 30  # minutes
+MAX_FAILED_ATTEMPTS = 5   # lock after this many failed attempts
+
 def _check_rate_limit(client_ip: str) -> None:
     now = time.time()
     attempts = _rate_limit_store[client_ip]
@@ -45,6 +56,36 @@ def _check_rate_limit(client_ip: str) -> None:
 
 def _get_client_ip(request: Request) -> str:
     return request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+
+
+def _check_account_lockout(email: str) -> None:
+    """Check if account is locked and raise HTTPException if so."""
+    unlock_time = _locked_accounts.get(email)
+    if unlock_time and unlock_time > datetime.utcnow():
+        remaining = int((unlock_time - datetime.utcnow()).total_seconds() / 60) + 1
+        raise HTTPException(
+            status_code=423,
+            detail=f"Account locked due to too many failed attempts. Try again in {remaining} minutes.",
+        )
+    elif unlock_time:
+        del _locked_accounts[email]
+
+
+def _record_failed_attempt(email: str) -> None:
+    """Record failed login attempt and lock account if threshold reached."""
+    global _failed_attempts
+    count = _failed_attempts.get(email, 0) + 1
+    _failed_attempts[email] = count
+    if count >= MAX_FAILED_ATTEMPTS:
+        unlock_time = datetime.utcnow() + timedelta(minutes=LOCKOUT_DURATION)
+        _locked_accounts[email] = unlock_time
+        logger.warning(f"Account locked: {email}")
+
+
+def _clear_failed_attempts(email: str) -> None:
+    """Clear failed attempts counter on successful login."""
+    global _failed_attempts
+    _failed_attempts.pop(email, None)
 
 
 @router.get("/health")
@@ -254,16 +295,24 @@ def login(
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    import uuid
+    logger.info(f"Login attempt for: {payload.email}")
     client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
+    _check_account_lockout(payload.email)
 
     candidate = db.query(Candidate).filter(Candidate.email == payload.email).first()
     if candidate and verify_password(payload.password, candidate.password):
         if password_needs_upgrade(candidate.password):
             candidate.password = hash_password(payload.password)
             db.commit()
+        # Regenerate session ID to prevent session fixation
+        request.session.clear()
         request.session["user_id"] = candidate.id
         request.session["role"] = "candidate"
+        request.session["session_id"] = str(uuid.uuid4())
+        _clear_failed_attempts(payload.email)
+        logger.info(f"Candidate login success: {payload.email}")
         return {"ok": True, "role": "candidate", "user_id": candidate.id}
 
     hr_user = db.query(HR).filter(HR.email == payload.email).first()
@@ -271,10 +320,18 @@ def login(
         if password_needs_upgrade(hr_user.password):
             hr_user.password = hash_password(payload.password)
             db.commit()
+        # Regenerate session ID to prevent session fixation
+        request.session.clear()
         request.session["user_id"] = hr_user.id
         request.session["role"] = "hr"
+        request.session["session_id"] = str(uuid.uuid4())
+        _clear_failed_attempts(payload.email)
+        logger.info(f"HR login success: {payload.email}")
         return {"ok": True, "role": "hr", "user_id": hr_user.id}
 
+    # Record failed attempt
+    _record_failed_attempt(payload.email)
+    logger.warning(f"Login failed for: {payload.email} from {client_ip}")
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
@@ -434,6 +491,13 @@ def upload_avatar(
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
     if ext not in {"jpg", "jpeg", "png", "gif", "webp"}:
         raise HTTPException(status_code=400, detail="Invalid image format")
+
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    max_size_bytes = config.MAX_UPLOAD_SIZE_MB * 1_000_000
+    if file_size > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"Avatar file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
 
     avatar_dir = os.path.join("uploads", "avatars")
     os.makedirs(avatar_dir, exist_ok=True)

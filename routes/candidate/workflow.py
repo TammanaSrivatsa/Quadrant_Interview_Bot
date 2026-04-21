@@ -221,8 +221,9 @@ def upload_resume(
     resume.file.seek(0, 2)
     file_size = resume.file.tell()
     resume.file.seek(0)
-    if file_size > 5_000_000:
-        raise HTTPException(status_code=400, detail="Resume file exceeds 5MB limit")
+    max_size_bytes = config.MAX_UPLOAD_SIZE_MB * 1_000_000
+    if file_size > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"Resume file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
 
     logger.info(f"UPLOAD_RESUME saving file for candidate_id={candidate.id}")
     resume_path = UPLOAD_DIR / f"resume_{candidate.id}_{uuid.uuid4().hex}_{safe_filename}"

@@ -20,6 +20,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.requests import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -123,20 +126,34 @@ async def _preload_ml_model() -> None:
     threading.Thread(target=_load_model, name="st-model-preload", daemon=True).start()
 
 
+# ── Security Headers Middleware ─────────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+
 # ── Environment & Production Safety ──────────────────────────────────────────
 IS_PROD = config.ENV == "production"
 logger.info(f"STARTUP: mode={'PRODUCTION' if IS_PROD else 'DEVELOPMENT'}")
 
 _secret_key = config.SECRET_KEY
-if not _secret_key or _secret_key == "2e7c1b7e8a9f4c2d8b1a6e5f3c4d7a8b9e0f1c2b3a4d5e6f7b8c9d0e1f2a3b4c":
-    if IS_PROD:
-        raise RuntimeError("SECRET_KEY MUST be set in production via environment variables.")
-    else:
-        logger.warning("SECRET_KEY not set or using default. Using fallback for local development.")
 
+if IS_PROD and not _secret_key:
+    raise RuntimeError("SECRET_KEY MUST be set in production via environment variables.")
+
+if not _secret_key:
+    logger.warning("SECRET_KEY not set. Using fallback for local development.")
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=_secret_key,
+    secret_key=_secret_key or "dev-fallback-key-change-in-production",
     same_site="none" if IS_PROD else "lax",
     https_only=IS_PROD,
     session_cookie="interview_bot_sid",

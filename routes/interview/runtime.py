@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from ai_engine.phase3.question_flow import compute_dynamic_seconds, normalize_result_questions
 
 from database import get_db
+from core.config import config
 
 from models import (
     Candidate,
@@ -2201,10 +2202,12 @@ def interview_transcribe(
     raw = audio.file.read()
 
     if not raw:
-
         raise HTTPException(status_code=400, detail="Audio payload is empty")
 
-
+    audio_size = len(raw)
+    max_size_bytes = config.MAX_UPLOAD_SIZE_MB * 1_000_000
+    if audio_size > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"Audio file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
 
     try:
 
@@ -2497,10 +2500,13 @@ def upload_proctor_frame(
 
     session = _get_candidate_session_or_403(db, session_id, current_user)
 
-
-
     raw = file.file.read()
-    
+
+    image_size = len(raw)
+    max_size_bytes = config.MAX_UPLOAD_SIZE_MB * 1_000_000
+    if image_size > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"Image file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
+
     image_quality_score = None
 
     frame = analyze_frame(session.id, raw)

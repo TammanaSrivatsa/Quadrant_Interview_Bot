@@ -1323,6 +1323,14 @@ def upload_jd(
     file_ext = Path(safe_filename).suffix.lower()
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail=f"Unsupported file type '{file_ext}'. Allowed: {', '.join(sorted(allowed_extensions))}")
+
+    jd_file.file.seek(0, 2)
+    file_size = jd_file.file.tell()
+    jd_file.file.seek(0)
+    max_size_bytes = config.MAX_UPLOAD_SIZE_MB * 1_000_000
+    if file_size > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"JD file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
+
     try:
         years = int(experience_requirement) if experience_requirement else 0
     except ValueError:
