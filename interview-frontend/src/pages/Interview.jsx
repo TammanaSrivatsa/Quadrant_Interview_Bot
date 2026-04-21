@@ -10,16 +10,15 @@ import { cn } from "../utils/utils";
 import AnswerFeedback from "../components/AnswerFeedback";
 import { useProctoring } from "../hooks/useProctoring";
 
-// ── Browser TTS hook ──────────────────────────────────────────────────────────
+// ── Amazon Polly TTS hook ─────────────────────────────────────────────────────
 function useTTS() {
   const [muted, setMuted] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const audioRef = useRef(null);
 
-  const speak = useCallback((text, voiceType = "indian_female") => {
+  const speak = useCallback(async (text, voiceType = "kajal") => {
     if (!text) return;
     if (typeof window === "undefined") return;
-
     if (muted) return;
 
     if (audioRef.current) {
@@ -30,19 +29,30 @@ function useTTS() {
       window.speechSynthesis.cancel();
     }
 
-    if (!window.speechSynthesis) return;
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-IN";
-    utterance.rate = 0.88;
-    utterance.pitch = 1.05;
-    utterance.volume = 1;
-
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-
-    window.speechSynthesis.speak(utterance);
+    try {
+      const { interviewApi } = await import("../services/api");
+      const response = await interviewApi.tts(text, voiceType);
+      if (response.audio_url) {
+        const audio = new Audio(response.audio_url);
+        audioRef.current = audio;
+        audio.onplay = () => setSpeaking(true);
+        audio.onended = () => setSpeaking(false);
+        audio.onerror = () => setSpeaking(false);
+        await audio.play();
+      }
+    } catch (err) {
+      console.warn("Polly TTS failed, falling back to browser TTS:", err);
+      if (!window.speechSynthesis) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-IN";
+      utterance.rate = 0.88;
+      utterance.pitch = 1.05;
+      utterance.volume = 1;
+      utterance.onstart = () => setSpeaking(true);
+      utterance.onend = () => setSpeaking(false);
+      utterance.onerror = () => setSpeaking(false);
+      window.speechSynthesis.speak(utterance);
+    }
   }, [muted]);
 
   const stop = useCallback(() => {

@@ -66,5 +66,10 @@ class Config:
     S3_PROCTOR_PREFIX = os.getenv("S3_PROCTOR_PREFIX", "proctoring")
     S3_REPORT_PREFIX = os.getenv("S3_REPORT_PREFIX", "reports")
 
+    # AWS Configuration (for Polly TTS)
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+    AWS_REGION = os.getenv("AWS_REGION", "us-east-1").strip()
+
 # Instantiate for global use
 config = Config()

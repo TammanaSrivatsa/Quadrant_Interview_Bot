@@ -282,6 +282,7 @@ export const hrApi = {
 export const interviewApi = {
   access: (resultId) => request({ method: "get", url: `/interview/${resultId}/access` }),
   start: (payload) => request({ method: "post", url: "/interview/start", data: payload }),
+  tts: (text, voice = "kajal") => request({ method: "post", url: "/interview/tts", params: { text, voice } }),
   submitAnswer: (payload) => request({ method: "post", url: "/interview/answer", data: payload }),
   transcribe: (formData) => request({ method: "post", url: "/interview/transcribe", data: formData }),
   logEvent: (targetId, payload) => request({ method: "post", url: `/interview/${targetId}/event`, data: payload }),

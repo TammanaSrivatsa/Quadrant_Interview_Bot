@@ -1288,8 +1288,28 @@ def _compose_start_response(
 
         "pause_seconds_left": pause_seconds_left,
 
+
     }
 
+
+@router.post("/interview/tts")
+
+def synthesize_question_speech(
+    text: str,
+    voice: str = "kajal",
+):
+    """Synthesize speech for interview question using Amazon Polly."""
+    from services.polly_tts import synthesize_speech_url
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    try:
+        result = synthesize_speech_url(text, voice)
+        return {"ok": True, **result}
+    except Exception as exc:
+        logger.error("TTS synthesis failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {str(exc)}")
 
 
 
