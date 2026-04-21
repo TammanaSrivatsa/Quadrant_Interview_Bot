@@ -5,6 +5,7 @@ import StatusBadge from "../components/StatusBadge";
 import ScoreBadge from "../components/ScoreBadge";
 import { hrApi } from "../services/api";
 import { ATS_STAGE_OPTIONS } from "../utils/stages";
+import { formatInterviewDateTimeLocal } from "../utils/formatters";
 
 function downloadHref(path) {
   if (!path) return "";
@@ -203,7 +204,7 @@ export default function HRCandidateDetailPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500">
-                      {app.interview_date ? new Date(app.interview_date).toLocaleDateString() : "—"}
+                      {formatInterviewDateTimeLocal(app, "—")}
                     </td>
                     <td className="px-4 py-3">
                       {app.latest_session?.id ? (
