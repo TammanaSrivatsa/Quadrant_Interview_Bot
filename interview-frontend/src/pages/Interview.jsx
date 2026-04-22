@@ -10,8 +10,8 @@ import { cn } from "../utils/utils";
 import AnswerFeedback from "../components/AnswerFeedback";
 import { useProctoring } from "../hooks/useProctoring";
 
-const SILENCE_THRESHOLD_RMS = 0.02;
-const SILENCE_RATIO_THRESHOLD = 0.7;
+const SILENCE_THRESHOLD_RMS = 0.05;
+const SILENCE_RATIO_THRESHOLD = 0.5;
 
 async function calculateAudioRMS(audioBlob) {
   const arrayBuffer = await audioBlob.arrayBuffer();
