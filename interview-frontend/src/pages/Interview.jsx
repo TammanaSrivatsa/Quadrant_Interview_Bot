@@ -168,6 +168,9 @@ export default function Interview() {
   const [answerFeedback, setAnswerFeedback] = useState(null);
   const [proctorAlert, setProctorAlert] = useState("");
   const [lastRecordedPreview, setLastRecordedPreview] = useState("");
+  const [interviewStatus, setInterviewStatus] = useState("idle");
+  const [showEndModal, setShowEndModal] = useState(false);
+  const [timeWarningShown, setTimeWarningShown] = useState(false);
 
   const selectedVoice = (() => {
     const saved = sessionStorage.getItem(`interview-voice:${resultId}`);
@@ -305,6 +308,7 @@ export default function Interview() {
     setAnswer("");
     setLastRecordedPreview("");
     setTranscriptionWarning("");
+    setTimeWarningShown(false);
     setIsRecording(false);
     setIsTranscribing(false);
     autoSubmittedRef.current = false;
