@@ -367,7 +367,11 @@ def upload_resume_s3(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Upload resume via S3 URL (frontend uploads to S3 directly)."""
-    logger.info(f"UPLOAD_RESUME_S3_START candidate_id={current_user.user_id} url={resume_url}")
+    logger.info(f"UPLOAD_RESUME_S3_START candidate_id={current_user.user_id} url_len={len(resume_url)}")
+
+    if not resume_url or len(resume_url) > 500:
+        logger.error(f"UPLOAD_RESUME_S3 invalid url length: {len(resume_url)}, content preview: {resume_url[:200]}")
+        raise HTTPException(status_code=400, detail="Invalid resume URL. Please re-upload your resume file.")
     candidate = get_candidate_or_404(db, current_user.user_id)
     profile_changed = ensure_candidate_profile(candidate, db)
 
@@ -387,10 +391,13 @@ def upload_resume_s3(
     db.refresh(candidate)
 
     try:
+        if not resume_url.startswith(("http://", "https://")):
+            logger.error(f"UPLOAD_RESUME_S3 invalid URL format: {resume_url[:100]}")
+            raise HTTPException(status_code=400, detail="Invalid URL format. Must start with http:// or https://")
+
         response = requests.get(resume_url, timeout=30)
         response.raise_for_status()
-        
-        # Extract file extension from URL or content-type
+
         content_type = response.headers.get("content-type", "")
         if "pdf" in content_type:
             file_ext = ".pdf"
@@ -398,11 +405,11 @@ def upload_resume_s3(
             file_ext = ".docx"
         else:
             file_ext = Path(resume_url).suffix.lower() or ".pdf"
-        
+
         temp_path = UPLOAD_DIR / f"resume_{candidate.id}_{uuid.uuid4().hex}{file_ext}"
         with temp_path.open("wb") as f:
             f.write(response.content)
-        
+
         resume_text = extract_text_from_file(temp_path)
         candidate.resume_text = resume_text
         temp_path.unlink(missing_ok=True)
