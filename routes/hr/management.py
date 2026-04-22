@@ -311,6 +311,7 @@ def hr_create_jd(
         project_question_ratio=float(payload.project_question_ratio),
         is_active=True,
         score_weights_json=payload.score_weights_json,
+        total_duration_minutes=payload.total_duration_minutes or 30,
     )
     db.add(jd)
     db.commit()
@@ -379,6 +380,8 @@ def hr_update_jd(
         jd.question_count = jd.total_questions
     if payload.project_question_ratio is not None:
         jd.project_question_ratio = float(payload.project_question_ratio)
+    if payload.total_duration_minutes is not None:
+        jd.total_duration_minutes = int(payload.total_duration_minutes)
     if payload.score_weights_json is not None:
         jd.score_weights_json = payload.score_weights_json
 

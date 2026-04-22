@@ -70,6 +70,7 @@ function JdForm({ initialData, onSave, onCancel }) {
   const [projectQuestionRatioPct, setProjectQuestionRatioPct] = useState(
     initialData?.project_question_ratio != null ? Math.round(initialData.project_question_ratio * 100) : 80
   );
+  const [totalDurationMinutes, setTotalDurationMinutes] = useState(initialData?.total_duration_minutes ?? 30);
   const [uploading, setUploading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -116,11 +117,11 @@ function JdForm({ initialData, onSave, onCancel }) {
         weights_json: skills,
         qualify_score: Number(qualifyScore),
         total_questions: Number(totalQuestions),
-        // PHASE 1 FIX: real values instead of hardcoded defaults
         education_requirement: educationRequirement.trim() || null,
         experience_requirement: Number(experienceRequirement) || 0,
         min_academic_percent: Number(minAcademicPercent) || 0,
         project_question_ratio: Math.max(0, Math.min(1, Number(projectQuestionRatioPct) / 100)),
+        total_duration_minutes: Number(totalDurationMinutes) || 30,
       };
       if (isEdit) { await hrApi.updateJd(initialData.id, payload); }
       else { await hrApi.createJd(payload); }
@@ -197,6 +198,13 @@ function JdForm({ initialData, onSave, onCancel }) {
               onChange={(e) => setProjectQuestionRatioPct(e.target.value)} placeholder="80"
               className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm dark:text-white" />
             <p className="text-xs text-slate-400 mt-1">Rest = theory questions</p>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Interview Duration (min)</label>
+            <input type="number" min={5} max={120} value={totalDurationMinutes}
+              onChange={(e) => setTotalDurationMinutes(e.target.value)} placeholder="30"
+              className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm dark:text-white" />
+            <p className="text-xs text-slate-400 mt-1">Total interview time</p>
           </div>
         </div>
       </div>

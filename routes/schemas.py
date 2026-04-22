@@ -80,6 +80,7 @@ class HrJDCreateBody(BaseModel):
     min_academic_percent: float = Field(default=0.0, ge=0, le=100)
     total_questions: int = Field(default=8, ge=2, le=50)
     project_question_ratio: float = Field(default=0.8, ge=0.0, le=1.0)
+    total_duration_minutes: int = Field(default=30, ge=5, le=120, description="Total interview duration in minutes")
     score_weights_json: dict[str, float] | None = Field(default=None, description="Custom weights for final score calculation: {resume: 0.35, skills: 0.25, interview: 0.25, communication: 0.15}")
 
 
@@ -94,6 +95,7 @@ class HrJDUpdateBody(BaseModel):
     min_academic_percent: float | None = Field(default=None, ge=0, le=100)
     total_questions: int | None = Field(default=None, ge=2, le=50)
     project_question_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    total_duration_minutes: int | None = Field(default=None, ge=5, le=120)
     score_weights_json: dict[str, float] | None = Field(default=None, description="Custom weights for final score calculation")
 
 
