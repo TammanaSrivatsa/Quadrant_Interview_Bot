@@ -768,97 +768,136 @@ export default function Interview() {
             </div>
           )}
 
-          {/* Question card with replay button */}
-          <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1 h-full bg-blue-600" />
-            <div className="flex items-start gap-4 pl-4">
-              <h2 className="text-2xl font-bold text-white leading-tight flex-1">
-                {currentQuestion?.text}
-              </h2>
-              <button
-                type="button"
-                onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "", selectedVoice)}
-                disabled={speaking}
-                title={speaking ? "Stop" : "Read question aloud (Indian accent)"}
-                className={cn(
-                  "flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border transition-all",
-                  speaking
-                    ? "bg-blue-600 border-blue-500 text-white"
-                    : "bg-slate-800 border-slate-700 text-slate-400 hover:text-blue-400 hover:border-blue-600",
-                  speaking && "opacity-50 cursor-wait"
-                )}
-              >
-                {speaking ? (
-                  <span className="flex items-end gap-1 h-4">
-                    {[...Array(4)].map((_, i) => (
-                      <span 
-                        key={i} 
-                        className="w-1 bg-white rounded-full animate-[bounce_1s_infinite]" 
-                        style={{ 
-                          height: i % 2 === 0 ? "100%" : "60%", 
-                          animationDelay: `${i * 0.1}s` 
-                        }} 
-                      />
-                    ))}
-                  </span>
-                ) : (
-                  <Volume2 size={18} />
-                )}
-              </button>
-
-              {transcriptionWarning && (
-                <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
-                  {transcriptionWarning}
-                </p>
-              )}
-
-              {lastRecordedPreview && (
-                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3">
-                  <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Latest recording preview</p>
-                  <p className="text-sm text-blue-100 italic leading-relaxed">"{lastRecordedPreview}"</p>
+          {answerFeedback ? (
+            <AnswerFeedback
+              feedback={answerFeedback}
+              onContinue={() => _advanceAfterAnswer(answerFeedback._nextResponse)}
+            />
+          ) : (
+            <>
+              {/* Question card with replay button */}
+              <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-blue-600" />
+                <div className="flex items-start gap-4 pl-4">
+                  <h2 className="text-2xl font-bold text-white leading-tight flex-1">
+                    {currentQuestion?.text}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => speaking ? stopSpeaking() : speak(currentQuestion?.text || "", selectedVoice)}
+                    disabled={speaking}
+                    className={cn(
+                      "flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border transition-all",
+                      speaking
+                        ? "bg-blue-600 border-blue-500 text-white"
+                        : "bg-slate-800 border-slate-700 text-slate-400 hover:text-blue-400 hover:border-blue-600"
+                    )}
+                  >
+                    {speaking ? (
+                      <span className="flex items-end gap-1 h-4">
+                        {[...Array(4)].map((_, i) => (
+                          <span
+                            key={i}
+                            className="w-1 bg-white rounded-full animate-[bounce_1s_infinite]"
+                            style={{ height: i % 2 === 0 ? "100%" : "60%", animationDelay: `${i * 0.1}s` }}
+                          />
+                        ))}
+                      </span>
+                    ) : (
+                      <Volume2 size={18} />
+                    )}
+                  </button>
                 </div>
-              )}
+              </div>
 
+              {/* Your Response Section */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+                <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <MessageSquare size={14} className="text-blue-400" />
+                    Your Response
+                  </h3>
+                  <div className="flex items-center gap-1.5">
+                    <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isRecording ? "bg-red-500" : "bg-emerald-500")} />
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                      {isRecording ? "Recording" : isTranscribing ? "Transcribing" : "Ready"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="relative group p-6">
+                  <textarea
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    placeholder="Whisper transcript appears here. You can edit before submitting."
+                    className="w-full h-48 bg-transparent text-slate-200 text-base leading-relaxed placeholder:text-slate-600 outline-none resize-none"
+                    disabled={isSubmitting || isTranscribing}
+                  />
+                  
+                  {transcriptionWarning && (
+                    <div className="mt-4 flex items-start gap-2 text-amber-400 bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-xl text-xs animate-in fade-in slide-in-from-top-1">
+                      <AlertTriangle size={14} className="mt-0.5" />
+                      <span>{transcriptionWarning}</span>
+                    </div>
+                  )}
+
+                  {lastRecordedPreview && !isRecording && !isTranscribing && (
+                    <div className="mt-4 bg-blue-500/10 border border-blue-500/20 px-4 py-3 rounded-xl animate-in fade-in slide-in-from-top-1">
+                      <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Latest recording preview</p>
+                      <p className="text-sm text-blue-100 italic">"{lastRecordedPreview}"</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons Row */}
               <div className="flex flex-col sm:flex-row items-center gap-3">
                 <button
                   type="button"
                   onClick={handleRecordingToggle}
-                  disabled={isSubmitting || isTranscribing || isRecording}
+                  disabled={isSubmitting || isTranscribing}
                   className={cn(
-                    "flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-black text-sm transition-all disabled:opacity-50",
-                    isRecording ? "bg-red-600 hover:bg-red-700 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"
+                    "flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-black text-sm transition-all shadow-lg",
+                    isRecording 
+                      ? "bg-red-600 hover:bg-red-700 text-white animate-pulse" 
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
                   )}
                 >
                   {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
-                  {isRecording ? "Stop & Transcribe" : isTranscribing ? "Transcribing…" : "Start Speaking"}
+                  {isRecording ? "Stop Speaking" : isTranscribing ? "Transcribing..." : "Start Speaking"}
                 </button>
 
                 <div className="flex gap-3 flex-1 w-full sm:w-auto">
                   <button
                     type="button"
-                    onClick={() => { setAnswer(""); setLastRecordedPreview(""); }}
+                    onClick={() => { setAnswer(""); setLastRecordedPreview(""); setTranscriptionWarning(""); }}
                     disabled={isSubmitting || isTranscribing || isRecording}
-                    className="flex-1 sm:flex-none px-5 py-3.5 rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 font-bold text-sm transition-all"
+                    className="flex-1 sm:flex-none px-6 py-3.5 rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 font-bold text-sm transition-all"
                   >
                     Clear
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSubmit(false)}
-                    disabled={isSubmitting || isTranscribing || isRecording}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm transition-all disabled:opacity-50"
+                    disabled={isSubmitting || isTranscribing || isRecording || !answer.trim()}
+                    className={cn(
+                      "flex-1 sm:flex-none flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl font-black text-sm transition-all shadow-lg",
+                      "bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
+                    )}
                   >
-                    <span>{isSubmitting ? "Submitting…" : questionNumber === maxQuestions ? "Finish" : "Submit"}</span>
+                    <span>{isSubmitting ? "Submitting..." : questionNumber === maxQuestions ? "Finish" : "Submit"}</span>
                     <Send size={16} />
                   </button>
                 </div>
 
-                <p className="text-xs text-slate-500 text-center pt-1">
-                  Press Space to record • Ctrl + Enter to submit
-                </p>
+                <div className="hidden lg:block ml-auto text-right">
+                  <p className="text-xs text-slate-500 font-medium italic">
+                    Press Space to record • Ctrl + Enter to submit
+                  </p>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* ── RIGHT — proctoring panel ───────────────────────────────────── */}
           <div className="space-y-4">
