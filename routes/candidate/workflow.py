@@ -254,6 +254,7 @@ def upload_resume(
 
     selected_jd_id = job_id or candidate.selected_jd_id
     if not selected_jd_id:
+        logger.error("UPLOAD_RESUME missing_jd candidate_id=%s job_id=%s selected_jd_id=%s", candidate.id, job_id, candidate.selected_jd_id)
         raise HTTPException(status_code=400, detail="Select a JD before uploading resume")
 
     selected_jd = _selected_jd_or_404(db, selected_jd_id)
@@ -400,6 +401,14 @@ def upload_resume_s3(
     try:
         response = requests.get(resume_url, timeout=30)
         response.raise_for_status()
+        logger.info(
+            "UPLOAD_RESUME_S3 download_success candidate_id=%s status=%s content_type=%s bytes=%s host=%s",
+            candidate.id,
+            response.status_code,
+            response.headers.get("content-type", ""),
+            len(response.content or b""),
+            parsed_resume_url.netloc,
+        )
 
         content_type = response.headers.get("content-type", "")
         if "pdf" in content_type:
@@ -420,12 +429,25 @@ def upload_resume_s3(
         temp_path.unlink(missing_ok=True)
         logger.info(f"UPLOAD_RESUME_S3 text extracted len={len(resume_text)}")
     except requests.exceptions.RequestException as e:
-        logger.error(f"UPLOAD_RESUME_S3 failed to download from S3: {e}")
-        raise HTTPException(status_code=400, detail=f"Could not download resume from S3: {str(e)}")
+        status_code = getattr(getattr(e, "response", None), "status_code", None)
+        logger.error(
+            "UPLOAD_RESUME_S3 download_failed candidate_id=%s host=%s status=%s error=%s",
+            candidate.id,
+            parsed_resume_url.netloc,
+            status_code,
+            e,
+        )
+        raise HTTPException(status_code=400, detail="Could not download resume from S3. Please re-upload the file.")
     except Exception as e:
-        logger.warning(f"UPLOAD_RESUME_S3 text extraction failed: {e}")
+        logger.warning("UPLOAD_RESUME_S3 text_extraction_failed candidate_id=%s error=%s", candidate.id, e)
 
     if not candidate.resume_text:
+        logger.error(
+            "UPLOAD_RESUME_S3 empty_resume_text candidate_id=%s file_ext=%s content_type=%s",
+            candidate.id,
+            locals().get("file_ext"),
+            locals().get("content_type"),
+        )
         raise HTTPException(status_code=400, detail="Resume text could not be extracted. Please upload a valid PDF, DOCX, or TXT file.")
 
     try:

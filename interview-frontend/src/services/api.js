@@ -39,6 +39,9 @@ function extractErrorMessage(error) {
   if (Array.isArray(detail) && detail.length) {
     return detail.map((i) => (typeof i === "string" ? i : i?.msg || JSON.stringify(i))).join(", ");
   }
+  if (detail && typeof detail === "object") {
+    return detail.message || detail.error || JSON.stringify(detail);
+  }
   return error?.message || "Request failed";
 }
 
@@ -192,6 +195,9 @@ export const candidateApi = {
       
       if (isProduction) {
         const s3Url = await uploadFileToS3(file, onProgress);
+        if (!s3Url || !/^https?:\/\//i.test(String(s3Url))) {
+          throw new Error("Resume upload did not return a valid file URL. Please try again.");
+        }
         const response = await apiClient.post("/candidate/upload-resume-s3", 
           { resume_url: s3Url, job_id: jobId },
           { headers: { "Content-Type": "application/json" } }
