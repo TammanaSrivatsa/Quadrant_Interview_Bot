@@ -276,6 +276,21 @@ export default function PreCheck() {
       }
 
       sessionStorage.setItem(`interview-consent:${resultId}`, "true");
+      const currentToken = new URLSearchParams(location.search).get("token") || 
+        (() => {
+          try {
+            const hash = location.hash || "";
+            const hashPath = hash.replace("#", "");
+            const qIndex = hashPath.indexOf("?");
+            if (qIndex >= 0) {
+              return new URLSearchParams(hashPath.substring(qIndex)).get("token") || "";
+            }
+          } catch (e) {}
+          return "";
+        })();
+      if (currentToken) {
+        sessionStorage.setItem(`interview-token:${resultId}`, currentToken);
+      }
       navigate(`/interview/${resultId}/live`);
     } catch (e) {
       setError(e?.message || "Interview questions are not ready yet. Please try again.");

@@ -7,20 +7,20 @@ export default function Interview() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Parse token from hash URL (e.g., /interview/187?token=xxx)
+// Parse token from hash URL (e.g., /interview/187?token=xxx)
   const getTokenFromHash = () => {
     try {
       const hash = location.hash || "";
       const hashPath = hash.replace("#", "");
       const qIndex = hashPath.indexOf("?");
       if (qIndex >= 0) {
-        const params = new URLSearchParams(hashPath.substring(qIndex));
-        return params.get("token") || "";
+        return new URLSearchParams(hashPath.substring(qIndex)).get("token") || "";
       }
     } catch (e) {}
     return "";
   };
-  const interviewToken = getTokenFromHash() || new URLSearchParams(location.search).get("token") || "";
+  const tokenFromUrl = getTokenFromHash() || new URLSearchParams(location.search).get("token") || "";
+  const interviewToken = tokenFromUrl || sessionStorage.getItem(`interview-token:${resultId}`) || "";
 
   const [sessionId, setSessionId] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
