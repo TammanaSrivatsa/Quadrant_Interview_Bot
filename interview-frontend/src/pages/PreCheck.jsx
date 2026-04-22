@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Camera, Mic, Wifi, CheckCircle2, AlertCircle, Play,
   ShieldCheck, Video, Settings, AlertTriangle, Lock, Mail, Volume2
@@ -120,6 +120,7 @@ function InlineLogin({ onSuccess }) {
 // ── Main PreCheck component ───────────────────────────────────────────────────
 export default function PreCheck() {
   const { resultId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const videoRef = useRef(null);
@@ -259,7 +260,7 @@ export default function PreCheck() {
       }
 
       if (access?.interview_locked_reason === "already_completed") {
-        navigate(`/interview/${resultId}/completed`);
+        navigate(`/interview/${resultId}/completed${location.search || ""}`);
         return;
       }
 
@@ -269,7 +270,7 @@ export default function PreCheck() {
       }
 
       sessionStorage.setItem(`interview-consent:${resultId}`, "true");
-      navigate(`/interview/${resultId}/live`);
+      navigate(`/interview/${resultId}/live${location.search || ""}`);
     } catch (e) {
       setError(e?.message || "Interview questions are not ready yet. Please try again.");
     } finally {
