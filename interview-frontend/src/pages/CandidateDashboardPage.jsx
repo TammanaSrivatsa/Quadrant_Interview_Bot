@@ -35,7 +35,7 @@ function SkillMatchTable({ explanation, selectedJd }) {
   const matchedSet = new Set((explanation?.matched_skills || []).map((s) => s.toLowerCase()));
   const allSkills = Object.keys(weights).length > 0
     ? Object.entries(weights).map(([skill, weight]) => ({ skill, weight: Number(weight), found: matchedSet.has(skill.toLowerCase()) }))
-    : [ ...(explanation?.matched_skills || []).map((s) => ({ skill: s, weight: "—", found: true })), ...(explanation?.missing_skills || []).map((s) => ({ skill: s, weight: "—", found: false })) ];
+    : [...(explanation?.matched_skills || []).map((s) => ({ skill: s, weight: "—", found: true })), ...(explanation?.missing_skills || []).map((s) => ({ skill: s, weight: "—", found: false }))];
   if (!allSkills.length) return null;
   const overallScore = Math.round(Number(explanation?.final_resume_score || explanation?.weighted_skill_score || 0));
   return (
@@ -70,10 +70,10 @@ export default function CandidateDashboardPage() {
   const interviewScheduledLabel = formatInterviewDateTimeLocal(result, "Not scheduled");
   const googleCalendarHref = calendarDateRange
     ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
-        "Interview - " + (selectedJd?.title || "Quadrant Technologies")
-      )}&dates=${calendarDateRange.startUtc}/${calendarDateRange.endUtc}&details=${encodeURIComponent(
-        "Join Link: " + (result?.interview_link || "")
-      )}`
+      "Interview - " + (selectedJd?.title || "Quadrant Technologies")
+    )}&dates=${calendarDateRange.startUtc}/${calendarDateRange.endUtc}&details=${encodeURIComponent(
+      "Join Link: " + (result?.interview_link || "")
+    )}`
     : "";
 
   async function loadDashboard(jobId) {
@@ -109,9 +109,9 @@ export default function CandidateDashboardPage() {
       console.log("[UPLOAD] Response received:", response);
       setDashboard(response);
       setMessage("Resume uploaded and scored successfully.");
-    } catch (e) { 
+    } catch (e) {
       console.error("[UPLOAD] Error:", e.message);
-      setError(e.message); 
+      setError(e.message);
     }
     finally { setUploading(false); e.target.value = ""; }
   }
@@ -128,9 +128,9 @@ export default function CandidateDashboardPage() {
   }
 
   const steps = [
-    { title: "JD selected", description: selectedJd ? selectedJd.title : "Select a role to apply", completed: Boolean(selectedJd) },
+    { title: "Job Description", description: selectedJd ? selectedJd.title : "Select a role to apply", completed: Boolean(selectedJd) },
     { title: "Resume uploaded", description: dashboard?.candidate?.resume_path ? "Resume stored" : "Upload your resume", completed: Boolean(dashboard?.candidate?.resume_path) },
-    { title: "AI screening", description: result ? `${Math.round(Number((result?.final_score ?? result?.score) || 0))}% ATS score` : "Pending", completed: Boolean(result) },
+    { title: "AI Screening", description: result ? `${Math.round(Number((result?.final_score ?? result?.score) || 0))}% Application Tracker score` : "Pending", completed: Boolean(result) },
     { title: "Interview stage", description: interviewCompleted ? "Interview submitted" : interviewReady ? "Ready to start" : canScheduleInterview ? "Schedule interview" : "Pending", completed: Boolean(interviewReady || interviewCompleted || finalDecision) },
   ];
 
@@ -142,7 +142,7 @@ export default function CandidateDashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 page-enter">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">Candidate Workspace</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Track your ATS stage, score breakdown, recommendation, and interview progress.</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">Track your Application Tracker (ATS) stage, score breakdown, recommendation, and interview progress.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => loadDashboard(dashboard?.selected_jd_id)} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center space-x-2"><RefreshCw size={16} /><span>Refresh</span></button>
@@ -165,12 +165,12 @@ export default function CandidateDashboardPage() {
           <div className="score-bar mt-3">
             <div className={`score-bar-fill ${Math.round(Number((result?.final_score ?? result?.score) || 0)) >= 80 ? "green" : Math.round(Number((result?.final_score ?? result?.score) || 0)) >= 65 ? "blue" : "red"}`} style={{ width: `${Math.min(Math.round(Number((result?.final_score ?? result?.score) || 0)), 100)}%` }} />
           </div>
-          <p className="muted mt-2">Weighted ATS score</p>
+          <p className="muted mt-2">Overall match score</p>
         </div>
         <div className="card card-hover-lift status-border-left purple">
           <p className="eyebrow">Recommendation</p>
           <h3>{result?.recommendation || "Pending"}</h3>
-          <p className="muted">Current ATS recommendation</p>
+          <p className="muted">System recommendation</p>
         </div>
         <div className="card card-hover-lift status-border-left yellow">
           <p className="eyebrow">Interview status</p>
@@ -182,15 +182,15 @@ export default function CandidateDashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 page-enter-delay-2">
         <div className="lg:col-span-2 space-y-8">
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-900 dark:text-white">Apply for Role</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Select a JD then upload your resume.</p></div><select id="selected_jd_id" name="selected_jd_id" value={dashboard?.selected_jd_id || ""} onChange={handleSelectJd} className="w-full md:w-80 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"><option value="" disabled>Select a JD</option>{(dashboard?.available_jds || []).map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}</select></div>
-            <div className="p-8"><label className={`relative flex flex-col items-center justify-center border-2 border-dashed rounded-3xl p-10 transition-all cursor-pointer group ${uploading ? "border-blue-400 bg-blue-50/30" : dashboard?.selected_jd_id ? "border-slate-200 dark:border-slate-800 hover:border-blue-400 hover:bg-blue-50/30" : "border-slate-200 dark:border-slate-800 opacity-60"}`}><input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || !dashboard?.selected_jd_id} />{uploading ? <div className="text-center"><Clock size={32} className="text-blue-600 animate-spin mx-auto mb-3" /><h4 className="text-lg font-bold text-slate-900 dark:text-white">Uploading and scoring...</h4></div> : <div className="text-center"><Upload size={32} className="text-slate-400 group-hover:text-blue-600 mx-auto mb-3 transition-colors" /><h4 className="text-lg font-bold text-slate-900 dark:text-white">{dashboard?.selected_jd_id ? "Click to upload resume" : "Select a JD first"}</h4><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">PDF, DOCX, or TXT</p></div>}</label></div>
+            <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-900 dark:text-white">Apply for Role</h2><p className="text-slate-500 dark:text-slate-400 mt-1">Select a Job Description then upload your resume.</p></div><select id="selected_jd_id" name="selected_jd_id" value={dashboard?.selected_jd_id || ""} onChange={handleSelectJd} className="w-full md:w-80 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"><option value="" disabled>Select a Job</option>{(dashboard?.available_jds || []).map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}</select></div>
+            <div className="p-8"><label className={`relative flex flex-col items-center justify-center border-2 border-dashed rounded-3xl p-10 transition-all cursor-pointer group ${uploading ? "border-blue-400 bg-blue-50/30" : dashboard?.selected_jd_id ? "border-slate-200 dark:border-slate-800 hover:border-blue-400 hover:bg-blue-50/30" : "border-slate-200 dark:border-slate-800 opacity-60"}`}><input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || !dashboard?.selected_jd_id} />{uploading ? <div className="text-center"><Clock size={32} className="text-blue-600 animate-spin mx-auto mb-3" /><h4 className="text-lg font-bold text-slate-900 dark:text-white">Uploading and scoring...</h4></div> : <div className="text-center"><Upload size={32} className="text-slate-400 group-hover:text-blue-600 mx-auto mb-3 transition-colors" /><h4 className="text-lg font-bold text-slate-900 dark:text-white">{dashboard?.selected_jd_id ? "Click to upload resume" : "Select a Job first"}</h4><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">PDF, DOCX, or TXT</p></div>}</label></div>
           </div>
 
           {result && <div className="space-y-8">
-            <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"><div className="flex items-center justify-between mb-6 flex-wrap gap-3"><h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center"><FileSearch className="text-blue-600 mr-3" size={24} />Resume vs JD — Skill Match</h3><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={result.stage} /><StatusBadge status={result.shortlisted ? "Shortlisted" : "Rejected"} className="text-sm px-4 py-1.5" /></div></div><SkillMatchTable explanation={explanation} selectedJd={selectedJd} />{Array.isArray(explanation?.reasons) && explanation.reasons.length > 0 && <div className="mt-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"><h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-3">Why this score</h4><ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">{explanation.reasons.map((r) => <li key={r} className="flex items-start"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 mr-3 flex-shrink-0" />{r}</li>)}</ul></div>}</div>
+            <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"><div className="flex items-center justify-between mb-6 flex-wrap gap-3"><h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center"><FileSearch className="text-blue-600 mr-3" size={24} />Resume vs Job Description — Skill Match</h3><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={result.stage} /><StatusBadge status={result.shortlisted ? "Shortlisted" : "Rejected"} className="text-sm px-4 py-1.5" /></div></div><SkillMatchTable explanation={explanation} selectedJd={selectedJd} />{Array.isArray(explanation?.reasons) && explanation.reasons.length > 0 && <div className="mt-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"><h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-3">Why this score</h4><ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">{explanation.reasons.map((r) => <li key={r} className="flex items-start"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 mr-3 flex-shrink-0" />{r}</li>)}</ul></div>}</div>
 
             <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"><h4 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center"><Sparkles className="text-blue-600 mr-2" size={18} />ATS Score Breakdown</h4><div className="space-y-4 text-sm">{[["Resume / JD Match", scoreBreakdown.resume_jd_match_score], ["Skills Match", scoreBreakdown.skills_match_score], ["Interview Score", scoreBreakdown.interview_performance_score], ["Communication", scoreBreakdown.communication_behavior_score]].map(([label, val]) => {const pct = Math.round(Number(val || 0)); return (<div key={label}><div className="flex items-center justify-between mb-1.5"><span className="text-slate-500 dark:text-slate-400">{label}</span><span className="font-bold text-slate-900 dark:text-white">{pct}%</span></div><div className="score-bar"><div className={`score-bar-fill ${pct >= 80 ? "green" : pct >= 65 ? "blue" : pct >= 40 ? "yellow" : "red"}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div></div>);})}</div></div>
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"><h4 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center"><Sparkles className="text-blue-600 mr-2" size={18} />Score Breakdown</h4><div className="space-y-4 text-sm">{[["Resume / JD Match", scoreBreakdown.resume_jd_match_score], ["Skills Match", scoreBreakdown.skills_match_score], ["Interview Score", scoreBreakdown.interview_performance_score], ["Communication", scoreBreakdown.communication_behavior_score]].map(([label, val]) => { const pct = Math.round(Number(val || 0)); return (<div key={label}><div className="flex items-center justify-between mb-1.5"><span className="text-slate-500 dark:text-slate-400">{label}</span><span className="font-bold text-slate-900 dark:text-white">{pct}%</span></div><div className="score-bar"><div className={`score-bar-fill ${pct >= 80 ? "green" : pct >= 65 ? "blue" : pct >= 40 ? "yellow" : "red"}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div></div>); })}</div></div>
               <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"><h4 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center"><CheckCircle2 className="text-emerald-500 mr-2" size={18} />Parsed Resume Snapshot</h4><p className="text-sm text-slate-600 dark:text-slate-300"><strong>Summary:</strong> {parsedResume.summary || "No summary extracted."}</p><div className="mt-4 flex flex-wrap gap-2">{(parsedResume.skills || []).length ? parsedResume.skills.map((item) => <span key={item} className="skill-pill">{item}</span>) : <span className="muted">No skills extracted.</span>}</div></div>
             </div>
 
@@ -202,7 +202,7 @@ export default function CandidateDashboardPage() {
 
         <div className="space-y-6 page-enter-delay-3">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm card-hover-lift"><h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-6">Application Progress</h4><StepChecklist steps={steps} /></div>
-          {selectedJd && <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm card-hover-lift"><h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-4">Selected JD</h4><p className="text-lg font-bold text-slate-900 dark:text-white">{selectedJd.title}</p><p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Cutoff {selectedJd.qualify_score}% · {selectedJd.total_questions} questions</p></div>}
+          {selectedJd && <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm card-hover-lift"><h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-4">Selected Job</h4><p className="text-lg font-bold text-slate-900 dark:text-white">{selectedJd.title}</p><p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Cutoff {selectedJd.qualify_score}% · {selectedJd.total_questions} questions</p></div>}
           {result && <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm card-hover-lift"><h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-4">Next Step Guidance</h4><div className="space-y-3 text-sm text-slate-600 dark:text-slate-300"><div className="question-preview-card">Current stage: {result.stage?.label || "Applied"}</div><div className="question-preview-card">Recommendation: {result.recommendation || "Pending"}</div><div className="question-preview-card">{showStartInterview ? "Your interview is ready to start." : canScheduleInterview ? "Schedule your interview to continue." : interviewCompleted ? "Interview completed — wait for HR review." : "Upload and improve your resume to move ahead."}</div></div></div>}
         </div>
       </div>

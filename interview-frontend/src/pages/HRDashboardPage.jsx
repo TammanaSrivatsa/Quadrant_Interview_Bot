@@ -96,7 +96,7 @@ export default function HRDashboardPage() {
     <div className="space-y-6">
       <PageHeader
         title="HR Dashboard"
-        subtitle="Production-style ATS analytics, rankings, funnel health, and recent candidate activity."
+        subtitle="Analytics, rankings, funnel health, and recent candidate activity."
         actions={(
           <>
             <button type="button" onClick={() => navigate("/hr/compare")} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
@@ -137,11 +137,11 @@ export default function HRDashboardPage() {
             </ChartCard>
           </div>
 
-          <ChartCard title="Average Score per JD" subtitle="Compare ATS score trends across job descriptions" accent="green">
-            {!chartReadyJdScores.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No JD score data</div> : <div className="ats-chart-box" style={{height: "250px"}}><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#10b981" /></BarChart></ResponsiveContainer></div>}
+          <ChartCard title="Average Score per Job" subtitle="Compare score trends across job descriptions" accent="green">
+            {!chartReadyJdScores.length ? <div className="text-center py-12 text-slate-500 dark:text-slate-400">No score data</div> : <div className="ats-chart-box" style={{height: "250px"}}><ResponsiveContainer width="100%" height="100%"><BarChart data={chartReadyJdScores}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" height={60} /><YAxis /><Tooltip /><Bar dataKey="score" radius={[10, 10, 0, 0]} fill="#10b981" /></BarChart></ResponsiveContainer></div>}
           </ChartCard>
 
-          <ChartCard title="Top Ranked Candidates" subtitle="Final weighted ATS score sorted across current applications.">
+          <ChartCard title="Top Ranked Candidates" subtitle="Final weighted score sorted across current applications.">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-2">
               {!ranked.length ? <div className="col-span-3 text-center py-8 text-slate-500 dark:text-slate-400">No ranked candidates yet</div> : ranked.map((candidate) => {
                 const score = Math.round(Number(candidate.finalAIScore || candidate.score || 0));
@@ -183,7 +183,7 @@ export default function HRDashboardPage() {
         </div>
       </div>
 
-      <ChartCard title="Recent Candidates" subtitle="ATS list view preview with ranking and recommendations.">
+      <ChartCard title="Recent Candidates" subtitle="List view preview with ranking and recommendations.">
         {tableLoading ? <p className="center muted py-8">Loading candidates...</p> : <CandidateTable candidates={candidatesData?.candidates || []} onDeleteCandidate={handleDeleteCandidate} onScheduleCandidate={handleScheduleCandidate} />}
       </ChartCard>
     </div>

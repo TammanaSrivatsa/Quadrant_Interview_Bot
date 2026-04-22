@@ -126,9 +126,9 @@ export default function PreCheck() {
   const streamRef = useRef(null);
 
   const [checks, setChecks] = useState({
-    camera:        { status: "pending", label: "Camera access" },
-    mic:           { status: "pending", label: "Microphone access" },
-    internet:      { status: "granted", label: "Internet connection" },
+    camera: { status: "pending", label: "Camera access" },
+    mic: { status: "pending", label: "Microphone access" },
+    internet: { status: "granted", label: "Internet connection" },
     voiceRecorder: { status: "pending", label: "Voice recording support" },
   });
   const [isChecking, setIsChecking] = useState(false);
@@ -200,9 +200,9 @@ export default function PreCheck() {
       streamRef.current = stream;
       await attachPreviewStream(videoRef.current, stream);
       setChecks({
-        camera:        { status: "granted", label: "Camera access" },
-        mic:           { status: micGranted ? "granted" : "denied", label: "Microphone access" },
-        internet:      { status: "granted", label: "Internet connection" },
+        camera: { status: "granted", label: "Camera access" },
+        mic: { status: micGranted ? "granted" : "denied", label: "Microphone access" },
+        internet: { status: "granted", label: "Internet connection" },
         voiceRecorder: {
           status: recorderCheck.supported ? "granted" : "denied",
           label: "Voice recording support",
@@ -210,13 +210,13 @@ export default function PreCheck() {
         },
       });
       if (!micGranted) {
-        setError("Camera preview is active, but microphone permission is blocked. Allow mic access for voice answers.");
+        setError("Camera preview is active, but microphone permission is blocked. Please click the lock icon next to your URL bar, allow microphone permissions, and refresh the page.");
       }
     } catch {
       setChecks({
-        camera:        { status: "denied", label: "Camera access" },
-        mic:           { status: "denied", label: "Microphone access" },
-        internet:      { status: "granted", label: "Internet connection" },
+        camera: { status: "denied", label: "Camera access" },
+        mic: { status: "denied", label: "Microphone access" },
+        internet: { status: "granted", label: "Internet connection" },
         voiceRecorder: {
           status: recorderCheck.supported ? "granted" : "denied",
           label: "Voice recording support",
@@ -237,7 +237,7 @@ export default function PreCheck() {
       if (document.documentElement.requestFullscreen) {
         try {
           await document.documentElement.requestFullscreen();
-        } catch {}
+        } catch { }
       }
       const access = await interviewApi.access(Number(resultId));
 
@@ -319,8 +319,8 @@ export default function PreCheck() {
                 check.status === "granted"
                   ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400"
                   : check.status === "denied"
-                  ? "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800/50 text-red-700 dark:text-red-400"
-                  : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400"
+                    ? "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800/50 text-red-700 dark:text-red-400"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400"
               )}>
                 <div className="flex items-center space-x-4">
                   <div className={cn("relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
