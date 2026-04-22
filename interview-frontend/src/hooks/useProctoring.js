@@ -3,7 +3,7 @@
  *
  * Lightweight proctoring hook for the Interview page.
  *
- * Features (all run asynchronously, none block the UI thread):
+ * Features (all run asynchronously, none block the UI thread):let sharedAudioContext = null;
  *   1. Tab-switch detection - visibilitychange event
  *   2. Voice confidence - pure heuristic on transcript text:
  *      speaking rate, filler words, sentence fragmentation.
@@ -100,7 +100,7 @@ export function useProctoring({ sessionId, resultId, interviewToken, enabled = t
           timestamp: new Date().toISOString(),
           meta: { hidden: true },
         }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     document.addEventListener("visibilitychange", onVisibilityChange);

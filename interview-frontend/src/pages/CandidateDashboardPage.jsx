@@ -223,7 +223,7 @@ export default function CandidateDashboardPage() {
               </CollapseSection>
 
               <div className="grid md:grid-cols-2 gap-6">
-                <CollapseSection title="Score Breakdown">
+                <CollapseSection title="Score Breakdown" defaultOpen={false}>
                   <div className="space-y-4 text-sm">
                     {[["Resume / JD Match", scoreBreakdown.resume_jd_match_score], ["Skills Match", scoreBreakdown.skills_match_score], ["Interview Score", scoreBreakdown.interview_performance_score], ["Communication", scoreBreakdown.communication_behavior_score]].map(([label, val]) => {
                       const pct = Math.round(Number(val || 0));

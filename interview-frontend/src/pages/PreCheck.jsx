@@ -216,13 +216,12 @@ export default function PreCheck() {
         },
       });
       if (!micGranted) {
-        setError("Camera preview is active, but microphone permission is blocked. Please click the lock icon in your browser address bar and enable permissions, then refresh the page.");
+        setError("Microphone not available. You can still complete the interview by typing answers.");
       }
     } catch {
-      setError("Camera or Microphone access denied. Please click the lock icon in your browser address bar and enable permissions, then refresh the page to continue.");
       setChecks({
-        camera: { status: "denied", label: "Camera access", detail: "Click the lock icon in your browser address bar, allow camera access, then refresh." },
-        mic: { status: "denied", label: "Microphone access", detail: "Click the lock icon in your browser address bar, allow microphone access, then refresh." },
+        camera: { status: "denied", label: "Camera access", detail: "Camera permission was blocked by browser." },
+        mic: { status: "denied", label: "Microphone access", detail: "Microphone permission was blocked by browser." },
         internet: { status: "granted", label: "Internet connection" },
         voiceRecorder: {
           status: recorderCheck.supported ? "granted" : "denied",
@@ -230,6 +229,7 @@ export default function PreCheck() {
           detail: recorderCheck.reason,
         },
       });
+      setError("");
     } finally {
       setIsChecking(false);
     }
@@ -309,6 +309,20 @@ export default function PreCheck() {
 
           {error && <p className="alert error">{error}</p>}
 
+          {error && checks.camera.status === "denied" && (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <h4 className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2 mb-3">
+                <Lock size={16} />How to Enable Camera & Microphone
+              </h4>
+              <ol className="text-sm text-amber-700 dark:text-amber-400 space-y-2 list-decimal list-inside">
+                <li>Click the <strong>lock (🔒) or eye (👁) icon</strong> in your browser address bar</li>
+                <li>Set <strong>Camera</strong> and <strong>Microphone</strong> to "Allow"</li>
+                <li>Click <strong>"Done"</strong> to save</li>
+                <li>Click <strong>"Run System Check"</strong> again below</li>
+              </ol>
+            </div>
+          )}
+
           {voiceUnsupported && (
             <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-300">
               <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
@@ -320,38 +334,40 @@ export default function PreCheck() {
           )}
 
           <div className="space-y-4">
-            {Object.entries(checks).map(([key, check], idx) => (
+            {Object.entries(checks).map(([key, check], idx) => {
+              const statusLabel = check.status === "granted" ? "✓ Ready" : check.status === "denied" ? "✗ Blocked" : "○ Pending";
+              return (
               <div key={key} className={cn(
-                "flex items-center justify-between p-5 rounded-2xl border transition-all",
+                "flex items-center justify-between p-5 rounded-2xl border-2 transition-all",
                 check.status === "granted"
-                  ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400"
+                  ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700"
                   : check.status === "denied"
-                    ? "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800/50 text-red-700 dark:text-red-400"
-                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400"
+                    ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
               )}>
                 <div className="flex items-center space-x-4">
-                  <div className={cn("relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
+                  <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
                     check.status === "granted" ? "bg-emerald-100 dark:bg-emerald-800" : "bg-slate-100 dark:bg-slate-800")}>
-                    {/* Ping Animation overlay when active */}
-                    {check.status === "granted" && (
-                      <span className="absolute inset-0 rounded-xl animate-ping bg-emerald-400 opacity-20 duration-1000" style={{ animationDelay: `${idx * 150}ms` }}></span>
-                    )}
                     {key === "camera" && <Camera size={20} />}
                     {key === "mic" && <Mic size={20} />}
                     {key === "internet" && <Wifi size={20} />}
                     {key === "voiceRecorder" && <Mic size={20} />}
                   </div>
                   <div>
-                    <span className="font-bold block">{check.label}</span>
-                    <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
-                      {check.status === "granted" ? "Ready" : check.status === "denied" ? "Access Denied" : "Pending"}
-                    </span>
+                    <span className="font-bold block text-slate-900 dark:text-white">{check.label}</span>
+                    {check.detail && <span className="text-xs text-slate-500 block">{check.detail}</span>}
                   </div>
                 </div>
-                {check.status === "granted" && <CheckCircle2 size={24} className="text-emerald-600 dark:text-emerald-400 animate-[pulse_2s_ease-in-out_infinite]" />}
-                {check.status === "denied" && <AlertCircle size={24} className="text-red-600 dark:text-red-400 animate-bounce" />}
+                <div className={cn(
+                  "px-3 py-1.5 rounded-lg font-bold text-sm",
+                  check.status === "granted" ? "bg-emerald-100 dark:bg-emerald-800 text-emerald-700 dark:text-emerald-300" :
+                  check.status === "denied" ? "bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300" :
+                  "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                )}>
+                  {statusLabel}
+                </div>
               </div>
-            ))}
+            )})}
           </div>
 
           {/* Voice Selection */}
