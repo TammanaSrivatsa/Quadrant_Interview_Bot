@@ -203,3 +203,116 @@ textarea:focus-visible,
 :focus:not(:focus-visible) {
   outline: none;
 }
+
+/* ─── System Status & Loading States (Nielsen H1) ─────────────────────────── */
+/* Loading indicator - visible system status */
+[aria-busy="true"] {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+[aria-busy="true"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: inherit;
+}
+
+.dark [aria-busy="true"]::after {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Progress indicator for long-running operations */
+@keyframes progress-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.progress-indicator {
+  animation: progress-pulse 1.5s ease-in-out infinite;
+}
+
+/* Loading skeleton - prevent layout shift (Nielsen H1) */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+.dark .skeleton {
+  background: linear-gradient(90deg, #2d3748 25%, #4a5568 50%, #2d3748 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Feedback messages - consistent visibility */
+[role="status"],
+[role="alert"] {
+  position: relative;
+  overflow: auto;
+}
+
+.status-message {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  animation: slide-in 0.3s ease-out;
+}
+
+.status-message.info {
+  background-color: #dbeafe;
+  border-color: #bfdbfe;
+  color: #0c4a6e;
+}
+
+.status-message.success {
+  background-color: #dcfce7;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.status-message.warning {
+  background-color: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.status-message.error {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #7f1d1d;
+}
+
+.dark .status-message.info {
+  background-color: rgba(3, 102, 214, 0.1);
+  border-color: rgba(3, 102, 214, 0.3);
+  color: #93c5fd;
+}
+
+.dark .status-message.success {
+  background-color: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+.dark .status-message.warning {
+  background-color: rgba(217, 119, 6, 0.1);
+  border-color: rgba(217, 119, 6, 0.3);
+  color: #fbbf24;
+}
+
+.dark .status-message.error {
+  background-color: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #f87171;
+}
