@@ -15,7 +15,6 @@ np = None
 mp = None
 FaceDetection = None
 FaceMesh = None
-DrawingSpec = None
 
 try:
     import cv2
