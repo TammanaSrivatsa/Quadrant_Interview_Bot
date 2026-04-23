@@ -15,7 +15,7 @@ np = None
 mp = None
 FaceDetection = None
 FaceMesh = None
- DrawingSpec = None
+DrawingSpec = None
 
 try:
     import cv2
@@ -29,9 +29,10 @@ try:
     if mp:
         FaceDetection = mp.solutions.face_detection
         FaceMesh = mp.solutions.face_mesh
-        DrawingSpec = mp.solutions.drawing_utils
 except Exception:
     mp = None
+    FaceDetection = None
+    FaceMesh = None
 
 _FACE_CASCADE = None
 _UPPER_BODY_CASCADE = None
