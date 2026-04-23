@@ -6,13 +6,19 @@ from __future__ import annotations
 
 import json
 
+import hashlib
+
 import logging
 
 import os
 
 import re
 
+import time
+
 from datetime import datetime, timedelta
+
+from threading import Lock
 
 from pathlib import Path
 
@@ -69,6 +75,36 @@ from utils.stt_whisper import transcribe_audio_bytes
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+_TRANSCRIBE_CACHE_TTL_SECONDS = 120
+_TRANSCRIBE_CACHE_MAX_ITEMS = 256
+_transcribe_cache_lock = Lock()
+_transcribe_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _transcribe_cache_get(key: str) -> dict[str, Any] | None:
+    now = time.time()
+    with _transcribe_cache_lock:
+        stale = [k for k, (ts, _) in _transcribe_cache.items() if now - ts > _TRANSCRIBE_CACHE_TTL_SECONDS]
+        for k in stale:
+            _transcribe_cache.pop(k, None)
+        row = _transcribe_cache.get(key)
+        if not row:
+            return None
+        ts, payload = row
+        if now - ts > _TRANSCRIBE_CACHE_TTL_SECONDS:
+            _transcribe_cache.pop(key, None)
+            return None
+        return dict(payload)
+
+
+def _transcribe_cache_set(key: str, payload: dict[str, Any]) -> None:
+    now = time.time()
+    with _transcribe_cache_lock:
+        _transcribe_cache[key] = (now, dict(payload))
+        if len(_transcribe_cache) > _TRANSCRIBE_CACHE_MAX_ITEMS:
+            oldest_key = min(_transcribe_cache.items(), key=lambda item: item[1][0])[0]
+            _transcribe_cache.pop(oldest_key, None)
 
 
 
@@ -2302,6 +2338,22 @@ def interview_transcribe(
     if audio_size > max_size_bytes:
         raise HTTPException(status_code=400, detail=f"Audio file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
 
+    if audio_size < 900:
+        return {
+            "ok": True,
+            "text": "",
+            "confidence": 0.0,
+            "low_confidence": True,
+            "language": language,
+            "tiny_audio": True,
+        }
+
+    audio_hash = hashlib.sha256(raw).hexdigest()
+    cache_key = f"{current_user.user_id}:{language}:{audio_hash}"
+    cached = _transcribe_cache_get(cache_key)
+    if cached is not None:
+        return {"ok": True, **cached, "duplicate_audio": True}
+
     try:
 
         transcript = transcribe_audio_bytes(
@@ -2344,8 +2396,7 @@ def interview_transcribe(
 
         }
 
-
-
+    _transcribe_cache_set(cache_key, transcript)
     return {"ok": True, **transcript}
 
 

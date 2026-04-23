@@ -18,6 +18,8 @@ import { useAnnounce } from "../hooks/useAccessibility";
 const SILENCE_THRESHOLD_RMS = 0.005;
 const SILENCE_RATIO_THRESHOLD = 0.85;
 const TTS_TO_MIC_GUARD_MS = 1200;
+const MIN_AUDIO_BLOB_BYTES = 1200;
+const MIN_RECORDING_MS = 900;
 
 let sharedAudioContext = null;
 function getAudioContext() {
@@ -139,10 +141,35 @@ function sanitizeTranscriptSegment(text) {
     "please transcribe it accurately",
     "this is a recording of a professional interview candidate answering a question",
     "transcribed by",
-    "otter.ai"
+    "transcription by",
+    "translated by",
+    "translation by",
+    "subtitle by",
+    "subtitles by",
+    "caption by",
+    "captions by",
+    "otter.ai",
+    "amara.org"
   ];
   if (blockedFragments.some((item) => lowered.includes(item))) return "";
+
+  const words = lowered.match(/[a-z0-9']+/g) || [];
+  const metaTerms = ["transcription", "translation", "subtitle", "subtitles", "caption", "captions", "subscribe", "watching"];
+  const metaHits = metaTerms.reduce((count, term) => count + (lowered.includes(term) ? 1 : 0), 0);
+  if (words.length <= 8 && metaHits >= 2) return "";
+
   return raw;
+}
+
+async function hashBlobSha256(blob) {
+  if (!blob || !window?.crypto?.subtle) return "";
+  const data = await blob.arrayBuffer();
+  const digest = await window.crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function segmentKey(text) {
+  return normalizeTranscriptForCompare(text).slice(0, 180);
 }
 
 function hasActiveAudioTrack(stream) {
@@ -279,6 +306,10 @@ export default function Interview() {
   const answerTextareaRef = useRef(null);
   const ttsCooldownUntilRef = useRef(0);
   const wasSpeakingRef = useRef(false);
+  const recordingStartedAtRef = useRef(0);
+  const transcribeInFlightRef = useRef(false);
+  const lastAudioHashRef = useRef("");
+  const acceptedSegmentsRef = useRef(new Set());
 
   const { speak, stop: stopSpeaking, speaking, muted } = useTTS();
   const { proctoringEvents, analyseAnswer } = useProctoring({ sessionId, resultId, interviewToken, enabled: !!sessionId });
@@ -343,6 +374,8 @@ export default function Interview() {
       setTotalTimeLeft(response.remaining_total_seconds || 0);
       baselineCapturedRef.current = false;
       autoSubmittedRef.current = false;
+      acceptedSegmentsRef.current = new Set();
+      lastAudioHashRef.current = "";
       answerStartTimeRef.current = Date.now();
       announce(`Question ${response.question_number || 1} of ${response.max_questions || 1} loaded`);
 
@@ -452,6 +485,9 @@ export default function Interview() {
     setTimeWarningShown(false);
     setIsRecording(false);
     setIsTranscribing(false);
+    transcribeInFlightRef.current = false;
+    acceptedSegmentsRef.current = new Set();
+    lastAudioHashRef.current = "";
     autoSubmittedRef.current = false;
     answerStartTimeRef.current = Date.now();
     setAnswerFeedback(null);
@@ -499,6 +535,8 @@ export default function Interview() {
   const stopRecordingAndTranscribe = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return { text: "", lowConfidence: true, confidence: null };
+    if (transcribeInFlightRef.current) return { text: "", lowConfidence: true, confidence: null };
+    transcribeInFlightRef.current = true;
     setIsRecording(false); setIsTranscribing(true);
     try {
       return await new Promise((resolve, reject) => {
@@ -510,6 +548,9 @@ export default function Interview() {
             const chunksToUse = (validChunks && validChunks.length > 0) ? validChunks : recordedChunksRef.current;
             recordedChunksRef.current = [];
             releaseAudioStream();
+
+            const recordingMs = recordingStartedAtRef.current ? (Date.now() - recordingStartedAtRef.current) : 0;
+            recordingStartedAtRef.current = 0;
 
             if (chunksToUse.length === 0) {
               console.warn("[AUDIO] No chunks collected at all.");
@@ -524,24 +565,43 @@ export default function Interview() {
             const ext = mimeType.startsWith("audio/wav") ? ".wav" : ".webm";
 
             // Minimum size check - reject if too small (header only)
-            if (blob.size < 1000) {
+            if (blob.size < MIN_AUDIO_BLOB_BYTES || recordingMs < MIN_RECORDING_MS) {
               console.warn("[AUDIO] Recording too short, ignoring transcription");
               resolve({ text: "", lowConfidence: true });
               return;
             }
+
+            const audioHash = await hashBlobSha256(blob);
+            if (audioHash && audioHash === lastAudioHashRef.current) {
+              console.warn("[AUDIO] Duplicate audio blob ignored.");
+              resolve({ text: "", lowConfidence: true, duplicateAudio: true });
+              return;
+            }
+            if (audioHash) lastAudioHashRef.current = audioHash;
 
             const fd = new FormData();
             fd.append("audio", blob, `answer${ext}`);
             // Don't pass context_hint - it confuses Whisper with question text
             // fd.append("context_hint", String(currentQuestion?.text || ""));
             const res = await interviewApi.transcribe(fd);
-            resolve({ text: String(res?.text || "").trim(), lowConfidence: !!res?.low_confidence, confidence: res?.confidence });
+            const cleaned = sanitizeTranscriptSegment(String(res?.text || "").trim());
+            const key = segmentKey(cleaned);
+            if (key && acceptedSegmentsRef.current.has(key)) {
+              console.warn("[AUDIO] Duplicate transcript segment ignored.");
+              resolve({ text: "", lowConfidence: true, duplicateSegment: true });
+              return;
+            }
+            if (key) acceptedSegmentsRef.current.add(key);
+            resolve({ text: cleaned, lowConfidence: !!res?.low_confidence || !cleaned, confidence: res?.confidence });
           } catch (e) { reject(e); }
         };
         recorder.stop();
       });
-    } finally { setIsTranscribing(false); }
-  }, [currentQuestion, releaseAudioStream]);
+    } finally {
+      transcribeInFlightRef.current = false;
+      setIsTranscribing(false);
+    }
+  }, [releaseAudioStream]);
 
   const startRecording = useCallback(async () => {
     if (!window.MediaRecorder) {
@@ -564,6 +624,7 @@ export default function Interview() {
       const rec = new window.MediaRecorder(recStream, { mimeType: getPreferredAudioMimeType() });
       rec.ondataavailable = (ev) => { if (ev.data?.size > 0) recordedChunksRef.current.push(ev.data); };
       rec.start(1000);
+      recordingStartedAtRef.current = Date.now();
       recorderRef.current = rec;
       setIsRecording(true);
       setTranscriptionWarning("");
@@ -618,6 +679,9 @@ export default function Interview() {
     const cleaned = sanitizeTranscriptSegment(t.text);
     if (cleaned) setAnswer(prev => appendTranscript(prev, cleaned));
     setLastRecordedPreview(cleaned || "No speech detected");
+    if (!cleaned) {
+      setTranscriptionWarning("No clear speech detected. Please speak closer to mic and avoid background audio.");
+    }
     announce("Recording stopped");
   }, [isRecording, isSubmitting, isTranscribing, startRecording, stopRecordingAndTranscribe, announce]);
 
@@ -793,6 +857,11 @@ export default function Interview() {
                       <div aria-live="polite" className="mt-4 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
                         <p className="text-xs font-bold text-blue-400 uppercase mb-1">Latest recording preview</p>
                         <p className="text-sm text-slate-300 italic">"{lastRecordedPreview}"</p>
+                      </div>
+                    )}
+                    {!!transcriptionWarning && !isRecording && (
+                      <div role="alert" className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                        <p className="text-xs text-amber-300 font-semibold">{transcriptionWarning}</p>
                       </div>
                     )}
                   </div>

@@ -33,12 +33,17 @@ def _clean_transcript_text(text: str) -> str:
         "please transcribe it accurately",
         "this is a recording of a professional interview candidate answering a question",
         "transcribed by",
+        "transcription by",
         "otter.ai",
         "thank you for watching",
         "thanks for watching",
         "please subscribe",
         "subtitles by",
+        "subtitle by",
         "translated by",
+        "translation by",
+        "caption by",
+        "captions by",
         "amara.org",
     ]
     if any(fragment in lowered for fragment in blocked_fragments):
@@ -50,6 +55,14 @@ def _clean_transcript_text(text: str) -> str:
         return ""
 
     words = re.findall(r"[a-z0-9']+", lowered)
+
+    # Drop short meta-only outputs like "Transcription by XYZ Translation by".
+    meta_terms = ["transcription", "translation", "subtitle", "subtitles", "caption", "captions", "subscribe", "watching"]
+    meta_hits = sum(1 for term in meta_terms if term in lowered)
+    if len(words) <= 8 and meta_hits >= 2:
+        logger.warning("STT text dropped: short meta-only phrase '%s'", cleaned)
+        return ""
+
     if len(words) == 1 and len(words[0]) > 30:
         logger.warning("STT text dropped: suspicious single long token '%s'", cleaned)
         return ""
