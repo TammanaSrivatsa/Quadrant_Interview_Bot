@@ -64,9 +64,9 @@ def transcribe_audio_bytes(
     suffix = _resolve_suffix(filename)
     mime_type = _mime(suffix)
 
-    prompt = "Transcribe this audio to text. Return only the transcript."
+    prompt = "Transcribe this interview answer to text. Speak clearly and answer the question."
     if context_hint:
-        prompt += f" Context: {context_hint}"
+        prompt += f" The question was: {context_hint}"
 
     # Try OpenAI Whisper first
     if openai_key:
@@ -82,6 +82,17 @@ def transcribe_audio_bytes(
             text = result.get("text", "").strip() if result else ""
             
             logger.info("OpenAI transcription successful")
+
+            # Post-process: check for hallucination patterns
+            if text:
+                lower_text = text.lower()
+                # Check for hallucination patterns (URLs, weird phrases)
+                hallucination_patterns = ["www.", ".com", ".gov", "https://", "http://"]
+                has_hallucination = any(p in lower_text for p in hallucination_patterns)
+                if has_hallucination:
+                    logger.warning("Whisper returned potential hallucination: %s", text)
+                    text = ""
+
             return {
                 "text": text,
                 "confidence": 0.95 if text else 0.0,

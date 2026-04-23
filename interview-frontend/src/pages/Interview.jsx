@@ -247,10 +247,38 @@ export default function Interview() {
   const { speak, stop: stopSpeaking, speaking, muted } = useTTS();
   const { proctoringEvents, analyseAnswer } = useProctoring({ sessionId, resultId, interviewToken, enabled: !!sessionId });
   const { blockCount: inputBlockCount, lastBlockedAction } = useInputBlocking({ enabled: !!sessionId });
-  const { exitCount: fullScreenExitCount, showPrompt: fullScreenPrompt, dismissPrompt: dismissFullScreenPrompt, requestFullScreen } = useFullScreen({ enabled: !!sessionId });
+  const { exitCount: fullScreenExitCount, forcePause: fullScreenForcePause, dismissPause: dismissFullScreenPause, resumeFromPause, requestFullScreen } = useFullScreen({
+    enabled: !!sessionId,
+    onExit: (count) => console.log("[FULLSCREEN] Force stop triggered, exit count:", count)
+  });
   const { announce } = useAnnounce();
 
-  const tabSwitchCount = proctoringEvents.filter((e) => e.type === "TAB_SWITCH").length;
+  const isSecurityCompromised = tabSwitchCount > 0 || fullScreenExitCount > 0;
+
+  const tabSwitchAlert = <TabSwitchAlert count={tabSwitchCount} />;
+
+  // Force pause overlay when user exits full-screen
+  const fullScreenOverlay = fullScreenForcePause ? (
+    <div className="fixed inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-8">
+      <div className="bg-red-500/10 border-2 border-red-500 rounded-2xl p-8 max-w-md text-center">
+        <AlertOctagon size={64} className="text-red-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-red-400 mb-4">Interview Paused</h2>
+        <p className="text-slate-300 mb-6">
+          You exited full-screen mode. The interview requires full-screen to continue.
+        </p>
+        <button
+          type="button"
+          onClick={resumeFromPause}
+          className="bg-red-500 hover:bg-red-600 text-white py-3 px-6 rounded-xl font-bold"
+        >
+          Resume Interview
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  // Combine security alerts
+  const proctorAlertCombined = proctorAlert || (fullScreenExitCount > 0 ? "Full-screen exit detected" : null);
   const micReady = hasActiveAudioTrack(streamRef.current) || hasActiveAudioTrack(audioStreamRef.current);
   const micStatusOk = isRecording || isTranscribing || micReady;
 
@@ -280,6 +308,9 @@ export default function Interview() {
       autoSubmittedRef.current = false;
       answerStartTimeRef.current = Date.now();
       announce(`Question ${response.question_number || 1} of ${response.max_questions || 1} loaded`);
+
+      // Auto-request full-screen after interview starts
+      setTimeout(() => requestFullScreen(), 1500);
     } catch (e) {
       setError(e.message);
       announce(`Error loading interview: ${e.message}`, "assertive");
@@ -564,6 +595,7 @@ export default function Interview() {
       />
 
       <div id="main-content" className="max-w-7xl mx-auto space-y-6">
+        {fullScreenOverlay}
         <header role="banner" className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-500/20 animate-pulse" aria-hidden="true">
@@ -625,30 +657,15 @@ export default function Interview() {
               </div>
             )}
 
-            {fullScreenPrompt && (
-              <div role="alert" className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-xl">
+            {/* Security compromise warning */}
+            {isSecurityCompromised && !fullScreenForcePause && (
+              <div role="alert" className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl">
                 <div className="flex items-center gap-3">
-                  <AlertOctagon size={24} className="text-blue-400 flex-shrink-0" />
+                  <AlertOctagon size={24} className="text-amber-400 flex-shrink-0" />
                   <div className="flex-1">
-                    <p className="text-blue-400 font-bold text-sm">For best experience, please enter full-screen mode</p>
-                    <p className="text-blue-300/70 text-xs mt-1">This interview works best in full-screen. Click below to enter.</p>
+                    <p className="text-amber-400 font-bold text-sm">Security warning detected</p>
+                    <p className="text-amber-300/70 text-xs mt-1">Full-screen exit or tab switch was detected. Interview continues but is flagged.</p>
                   </div>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <button
-                    type="button"
-                    onClick={requestFullScreen}
-                    className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg font-bold text-sm transition-colors"
-                  >
-                    Enter Full-Screen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={dismissFullScreenPrompt}
-                    className="bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded-lg font-bold text-sm transition-colors"
-                  >
-                    Skip
-                  </button>
                 </div>
               </div>
             )}

@@ -1,23 +1,24 @@
 /**
  * useFullScreen.js
  *
- * Prompts user to enter full-screen mode on interview start.
- * Warns if user exits full-screen (doesn't stop interview).
- * Tracks full-screen exit count for proctoring.
+ * Enforces full-screen mode for interview:
+ * - Automatically requests full-screen when interview starts
+ * - Forces interview to stop if user exits full-screen
+ * - Tracks exit count
  *
  * Usage:
- *   const { isFullScreen, exitCount, requestFullScreen } = useFullScreen({
+ *   const { isFullScreen, exitCount, forcePause, requestFullScreen } = useFullScreen({
  *     enabled: true,
- *     onExitWarning: (count) => sendToBackend(count)
+ *     onExit: () => handleForceStop()
  *   });
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export function useFullScreen({ enabled = true, onExitWarning = null }) {
+export function useFullScreen({ enabled = true, onExit = null }) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [exitCount, setExitCount] = useState(0);
-  const [showPrompt, setShowPrompt] = useState(false);
+  const [forcePause, setForcePause] = useState(false);
   const [hasRequested, setHasRequested] = useState(false);
 
   const exitCountRef = useRef(0);
@@ -71,30 +72,45 @@ export function useFullScreen({ enabled = true, onExitWarning = null }) {
   const handleFullScreenChange = useCallback(() => {
     const nowFs = checkFullScreen();
 
-    // User was in full-screen and now exited
+    // User was in full-screen and now exited - force stop interview
     if (isCurrentlyFullScreen.current && !nowFs && hasRequested) {
       exitCountRef.current += 1;
       setExitCount(exitCountRef.current);
 
-      // Trigger warning callback if provided
-      if (onExitWarning) {
-        onExitWarning(exitCountRef.current);
-      }
+      // Force pause/stop the interview
+      setForcePause(true);
+      setHasRequested(false);
 
-      // Show prompt to re-enter
-      setShowPrompt(true);
+      // Trigger callback if provided
+      if (onExit) {
+        onExit(exitCountRef.current);
+      }
+    }
+
+    // Successfully entered full-screen
+    if (!isCurrentlyFullScreen.current && nowFs) {
+      setForcePause(false);
+      setHasRequested(true);
     }
 
     isCurrentlyFullScreen.current = nowFs;
-  }, [checkFullScreen, hasRequested, onExitWarning]);
+  }, [checkFullScreen, hasRequested, onExit]);
 
   const handleKeyDown = useCallback((e) => {
-    // Detect F11 or Escape attempts
+    // Block Escape key when in interview
     if (e.key === "Escape" && hasRequested && !isFullScreen) {
       e.preventDefault();
-      setShowPrompt(true);
+      setForcePause(true);
     }
   }, [hasRequested, isFullScreen]);
+
+  const handleBeforeUnload = useCallback((e) => {
+    // Prevent leaving during interview
+    if (hasRequested && isCurrentlyFullScreen.current === false) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  }, [hasRequested]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -111,44 +127,37 @@ export function useFullScreen({ enabled = true, onExitWarning = null }) {
     // Listen for escape key
     document.addEventListener("keydown", handleKeyDown);
 
+    // Prevent leaving page during interview
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
     return () => {
       document.removeEventListener("fullscreenchange", handleFullScreenChange);
       document.removeEventListener("webkitfullscreenchange", handleFullScreenChange);
       document.removeEventListener("mozfullscreenchange", handleFullScreenChange);
       document.removeEventListener("MSFullscreenChange", handleFullScreenChange);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [enabled, checkFullScreen, handleFullScreenChange, handleKeyDown]);
+  }, [enabled, checkFullScreen, handleFullScreenChange, handleKeyDown, handleBeforeUnload]);
 
-  // Auto-prompt on mount if enabled
-  useEffect(() => {
-    if (enabled && !hasRequested) {
-      // Delay slightly to let page load
-      const timer = setTimeout(() => setShowPrompt(true), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [enabled, hasRequested]);
-
-  const dismissPrompt = useCallback(() => {
-    setShowPrompt(false);
+  const dismissPause = useCallback(() => {
+    setForcePause(false);
   }, []);
 
-  const reRequestFullScreen = useCallback(async () => {
-    const success = await requestFullScreen();
-    if (success) {
-      setShowPrompt(false);
-    }
-    return success;
+  const resumeFromPause = useCallback(async () => {
+    // Try to re-enter full-screen and resume
+    await requestFullScreen();
+    setForcePause(false);
   }, [requestFullScreen]);
 
   return {
     isFullScreen,
     exitCount,
-    showPrompt,
+    forcePause,
     hasRequested,
     requestFullScreen,
     exitFullScreen,
-    dismissPrompt,
-    reRequestFullScreen,
+    dismissPause,
+    resumeFromPause,
   };
 }
