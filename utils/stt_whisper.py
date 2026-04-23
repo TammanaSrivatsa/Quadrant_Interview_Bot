@@ -81,16 +81,21 @@ def transcribe_audio_bytes(
             result = response.json()
             text = result.get("text", "").strip() if result else ""
             
-            logger.info("OpenAI transcription successful")
+            logger.info("OpenAI Whisper raw result: '%s', word_count: %d", text, len(text.split()) if text else 0)
 
-            # Post-process: check for hallucination patterns
+            # Post-process: check for hallucination patterns (only block if mostly URL)
             if text:
-                lower_text = text.lower()
-                # Check for hallucination patterns (URLs, weird phrases)
-                hallucination_patterns = ["www.", ".com", ".gov", "https://", "http://"]
-                has_hallucination = any(p in lower_text for p in hallucination_patterns)
-                if has_hallucination:
+                lower_text = text.lower().strip()
+                word_count = len(lower_text.split())
+                # Count URL-like patterns
+                url_count = sum(1 for p in ["www.", ".com", ".gov", ".org", ".net", "https://", "http://"] if p in lower_text)
+                # Block only if it's purely URL-like (less than 3 words and contains URL)
+                if word_count < 3 and url_count > 0:
                     logger.warning("Whisper returned potential hallucination: %s", text)
+                    text = ""
+                elif word_count == 1 and len(lower_text) > 30:
+                    # Single word longer than 30 chars is suspicious
+                    logger.warning("Whisper returned suspicious single word: %s", text)
                     text = ""
 
             return {
