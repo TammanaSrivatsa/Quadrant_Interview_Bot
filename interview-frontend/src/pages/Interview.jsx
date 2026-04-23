@@ -253,6 +253,7 @@ export default function Interview() {
   });
   const { announce } = useAnnounce();
 
+  const tabSwitchCount = proctoringEvents.filter((e) => e.type === "TAB_SWITCH").length;
   const isSecurityCompromised = tabSwitchCount > 0 || fullScreenExitCount > 0;
 
   const tabSwitchAlert = <TabSwitchAlert count={tabSwitchCount} />;
