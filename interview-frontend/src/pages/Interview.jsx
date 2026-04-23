@@ -618,7 +618,7 @@ export default function Interview() {
               </div>
             )}
 
-            {showFullScreenPrompt && (
+            {fullScreenPrompt && (
               <div role="alert" className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-xl">
                 <div className="flex items-center gap-3">
                   <AlertOctagon size={24} className="text-blue-400 flex-shrink-0" />
