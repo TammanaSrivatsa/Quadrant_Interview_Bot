@@ -43,7 +43,7 @@ class Config:
 
     # Environment and CORS
     ENV = os.getenv("ENV", "development").strip().lower()
-    DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://dfuwgnqei5yls.cloudfront.net"
+    DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS)
 
     # Database
