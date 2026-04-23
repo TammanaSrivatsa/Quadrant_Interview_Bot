@@ -129,7 +129,7 @@ function stopStreamTracks(stream) {
 
 function getPreferredAudioMimeType() {
   if (typeof window === "undefined" || !window.MediaRecorder) return "";
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+  const candidates = ["audio/wav", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
   return candidates.find((t) => window.MediaRecorder.isTypeSupported(t)) || "";
 }
 
@@ -477,6 +477,9 @@ export default function Interview() {
             const blob = new Blob(chunksToUse, { type: mimeType });
             console.log("[AUDIO] Sending blob for transcription, size:", blob.size);
 
+            // Determine correct extension based on actual mime type
+            const ext = mimeType.startsWith("audio/wav") ? ".wav" : ".webm";
+
             // Minimum size check - reject if too small
             if (blob.size < 2000) {
               console.warn("[AUDIO] Recording too short, ignoring transcription");
@@ -485,7 +488,7 @@ export default function Interview() {
             }
 
             const fd = new FormData();
-            fd.append("audio", blob, "answer.webm");
+            fd.append("audio", blob, `answer${ext}`);
             // Don't pass context_hint - it confuses Whisper with question text
             // fd.append("context_hint", String(currentQuestion?.text || ""));
             const res = await interviewApi.transcribe(fd);

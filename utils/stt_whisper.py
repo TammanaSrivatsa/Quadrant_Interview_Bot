@@ -9,13 +9,62 @@ Dynamic transcription - uses whichever API provider is available:
 from __future__ import annotations
 
 import base64
+import io
 import logging
 import os
 from pathlib import Path
 
 import requests
 
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+
+try:
+    from scipy.io import wavfile
+    import numpy as np
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+def _convert_webm_to_wav(audio_bytes: bytes) -> bytes | None:
+    """Convert webm audio to wav format for OpenAI compatibility.
+    Tries scipy first (no ffmpeg needed), falls back to pydub.
+    """
+    if SCIPY_AVAILABLE:
+        try:
+            import wave
+            with wave.open(io.BytesIO(), 'wb') as wf:
+                pass
+            sample_rate = 48000
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+            samples = np.array(audio.get_array_of_type()).astype(np.float32) / 32768.0
+            if audio.channels == 2:
+                samples = samples.reshape((-1, 2))
+            wav_io = io.BytesIO()
+            wavfile.write(wav_io, sample_rate, samples)
+            logger.info("scipy conversion: webm %d bytes -> wav %d bytes", len(audio_bytes), len(wav_io.getvalue()))
+            return wav_io.getvalue()
+        except Exception as e:
+            logger.warning("scipy conversion failed: %s", e)
+    
+    if PYDUB_AVAILABLE:
+        try:
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
+            wav_io = io.BytesIO()
+            audio.export(wav_io, format="wav")
+            logger.info("pydub conversion: webm %d bytes -> wav %d bytes", len(audio_bytes), len(wav_io.getvalue()))
+            return wav_io.getvalue()
+        except Exception as e:
+            logger.warning("pydub conversion failed: %s", e)
+    
+    logger.warning("No audio conversion available (need scipy or pydub+ffmpeg)")
+    return None
 
 
 def _resolve_suffix(filename: str | None) -> str:
@@ -70,12 +119,27 @@ def transcribe_audio_bytes(
 
     prompt = "Transcribe this interview answer to text clearly."
 
+    # Convert webm to wav if needed for OpenAI compatibility
+    audio_to_send = audio_bytes
+    file_to_send = filename or "audio.webm"
+    
+    if suffix == ".webm" and openai_key:
+        converted = _convert_webm_to_wav(audio_bytes)
+        if converted:
+            logger.info("Converted webm to wav: %d -> %d bytes", len(audio_bytes), len(converted))
+            audio_to_send = converted
+            file_to_send = "audio.wav"
+            mime_type = "audio/wav"
+        else:
+            # If conversion failed, try with different format hint
+            logger.warning("Conversion failed, trying with different approach")
+
     # Try OpenAI Whisper first
     if openai_key:
         try:
-            logger.info("OpenAI Whisper: audio_size=%d, mime_type=%s, language=%s", len(audio_bytes), mime_type, language or "en")
+            logger.info("OpenAI Whisper: audio_size=%d, mime_type=%s, language=%s", len(audio_to_send), mime_type, language or "en")
             url = "https://api.openai.com/v1/audio/transcriptions"
-            files = {"file": (filename or "audio.webm", audio_bytes, mime_type)}
+            files = {"file": (file_to_send, audio_to_send, mime_type)}
             data = {"model": "whisper-1", "language": language or "en", "prompt": prompt}
             headers = {"Authorization": f"Bearer {openai_key}"}
             
