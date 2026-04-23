@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Eye, RefreshCw, ThumbsDown, ThumbsUp, Users, Calendar, CheckCircle, XCircle, Filter, Search } from "lucide-react";
+import { Eye, RefreshCw, ThumbsDown, ThumbsUp, Users, Calendar, CheckCircle, XCircle, Filter, Search, ArrowUpDown } from "lucide-react";
 import ScoreBadge from "../components/ScoreBadge";
 import PageHeader from "../components/PageHeader";
 import { hrApi } from "../services/api";
@@ -135,6 +135,7 @@ export default function HRPipelinePage() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStage, setSelectedStage] = useState(null);
+  const [sortBy, setSortBy] = useState("highest_score");
   const stageSidebarRef = useRef(null);
 
   async function loadCandidates() {
@@ -187,6 +188,19 @@ export default function HRPipelinePage() {
         candidate?.candidate_uid?.toLowerCase().includes(query) ||
         candidate?.assignedJd?.title?.toLowerCase().includes(query)
       );
+    }
+    if (sortBy === "highest_score") {
+      result = [...result].sort((a, b) => (b.finalAIScore || b.score || 0) - (a.finalAIScore || a.score || 0));
+    } else if (sortBy === "lowest_score") {
+      result = [...result].sort((a, b) => (a.finalAIScore || a.score || 0) - (b.finalAIScore || b.score || 0));
+    } else if (sortBy === "name_asc") {
+      result = [...result].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    } else if (sortBy === "name_desc") {
+      result = [...result].sort((a, b) => (b.name || "").localeCompare(a.name || ""));
+    } else if (sortBy === "newest") {
+      result = [...result].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (sortBy === "oldest") {
+      result = [...result].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
     }
     return result;
   }, [candidates, selectedJdId, searchQuery]);
@@ -285,6 +299,15 @@ export default function HRPipelinePage() {
               const jdCount = candidates.filter(c => getCandidateJdId(c) === String(jd.id)).length;
               return <option key={jd.id} value={jd.id}>{jd.title} ({jdCount})</option>;
             })}
+          </select>
+          {/* Sort Dropdown */}
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="highest_score">Score: High → Low</option>
+            <option value="lowest_score">Score: Low → High</option>
+            <option value="name_asc">Name: A → Z</option>
+            <option value="name_desc">Name: Z → A</option>
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
           </select>
           <Link to="/hr/candidates" className="px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
             <Eye size={14} className="inline mr-1" /> List
