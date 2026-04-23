@@ -1296,12 +1296,19 @@ def _compose_start_response(
 
 @router.post("/interview/tts")
 
-def synthesize_question_speech(
-    text: str,
-    voice: str = "kajal",
+async def synthesize_question_speech(
+    request: Request,
 ):
     """Synthesize speech for interview question using Amazon Polly via Lambda."""
     import requests
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    text = body.get("text", "")
+    voice = body.get("voice", "kajal")
 
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
