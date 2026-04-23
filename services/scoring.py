@@ -29,13 +29,11 @@ DEFAULT_WEIGHTS = {
 
 
 def recommendation_for_score(final_score: float) -> str:
-    if final_score >= 80:
-        return "Strong Hire"
-    if final_score >= 65:
-        return "Hire"
-    if final_score >= 50:
-        return "Weak"
-    return "Reject"
+    if final_score >= 75:
+        return "Select"
+    if final_score >= 45:
+        return "Shortlist"
+    return "Weak"
 
 
 def evaluate_answer(question: str, answer: str, *, allotted_seconds: int = 0, time_taken_seconds: int = 0, jd_skills=()):

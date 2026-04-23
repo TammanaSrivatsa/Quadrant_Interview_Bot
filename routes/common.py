@@ -453,9 +453,7 @@ def evaluate_resume_for_job(
     )
     explanation["cutoff_score_used"] = cutoff_score
     explanation["score_cutoff_met"] = float(explanation["final_resume_score"]) >= cutoff_score
-    explanation["shortlist_eligible"] = bool(explanation["score_cutoff_met"]) and bool(
-        explanation.get("academic_cutoff_met", True)
-    )
+    explanation["shortlist_eligible"] = bool(explanation["score_cutoff_met"])
     explanation["question_count_used"] = question_count
     explanation["project_ratio_used"] = project_ratio
     return float(explanation["final_resume_score"]), explanation, []
@@ -472,8 +470,7 @@ def upsert_result(
     job=None,
 ) -> Result:
     score_cutoff_met = score >= float(cutoff_score)
-    academic_cutoff_met = bool(explanation.get("academic_cutoff_met", True))
-    shortlisted = bool(explanation.get("shortlist_eligible", score_cutoff_met and academic_cutoff_met))
+    shortlisted = bool(explanation.get("shortlist_eligible", score_cutoff_met))
 
     explanation["score_cutoff_met"] = score_cutoff_met
     explanation["shortlist_eligible"] = shortlisted
