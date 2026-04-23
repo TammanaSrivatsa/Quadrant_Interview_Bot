@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, Download, RefreshCw, ChevronLeft, ChevronRight, Eye, Trash2, ArrowUpDown, GitCompareArrows, CheckSquare, Layers } from "lucide-react";
+import { Search, Download, RefreshCw, ChevronLeft, ChevronRight, Eye, Trash2, ArrowUpDown, GitCompareArrows, CheckSquare, Layers, AlertCircle } from "lucide-react";
 import StatusBadge from "../components/StatusBadge";
 import ScoreBadge from "../components/ScoreBadge";
+import PageHeader from "../components/PageHeader";
 import { hrApi } from "../services/api";
 import { ATS_STAGE_OPTIONS } from "../utils/stages";
 import { cn } from "../utils/utils";
@@ -233,44 +234,69 @@ export default function HRCandidatesPage() {
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 page-enter">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">Candidate Directory</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Review ATS scores, assigned JDs, pipeline stages, recommendations, compare candidates, and apply bulk actions safely.</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button type="button" onClick={handleExportCsv} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"><Download size={20} /><span>Export CSV</span></button>
-          <button type="button" onClick={() => loadAllCandidates()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none"><RefreshCw size={18} /><span>Refresh</span></button>
-          <button type="button" onClick={handleCompareNavigate} disabled={selectedForCompare.length < 2} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"><GitCompareArrows size={18} /><span>Compare ({selectedForCompare.length})</span></button>
-        </div>
-      </div>
+      <PageHeader
+        title="Candidate Directory"
+        subtitle="Review scores, assignments, stages, and recommendations. Compare candidates and apply bulk updates safely."
+        actions={
+          <div className="flex items-center gap-3 flex-wrap">
+            <button type="button" onClick={handleExportCsv} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all" aria-label="Export candidates to CSV"><Download size={20} /><span>Export</span></button>
+            <button type="button" onClick={() => loadAllCandidates()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none" aria-label="Refresh candidate list"><RefreshCw size={18} /><span>Refresh</span></button>
+            <button type="button" onClick={handleCompareNavigate} disabled={selectedForCompare.length < 2} className={cn("px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all", selectedForCompare.length >= 2 ? "bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white shadow-lg shadow-purple-200 dark:shadow-none" : "bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed")} aria-label={`Compare ${selectedForCompare.length} candidates`} aria-disabled={selectedForCompare.length < 2}><GitCompareArrows size={18} /><span>Compare ({selectedForCompare.length})</span></button>
+          </div>
+        }
+      />
 
-      {error ? <p className="alert error">{error}</p> : null}
+      {error && <p className="alert error">{error}</p>}
 
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-          <div className="relative lg:col-span-2"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" /><input type="text" placeholder="Search by name, email, ID, or JD..." className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} /></div>
-          <select className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Stage: All</option>{ATS_STAGE_OPTIONS.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}</select>
-          <select className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" value={jdFilter} onChange={(event) => setJdFilter(event.target.value)}><option value="all">Assigned JD: All</option>{jdOptions.map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}</select>
-          <input type="number" value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="Min score" className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" />
-          <input type="number" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} placeholder="Max score" className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" />
-        </div>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Showing {paginatedCandidates.length} of {filteredCandidates.length} candidates</p>
-      </div>
-
-      <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><CheckSquare size={16} />Bulk Actions</div>
-          <button type="button" onClick={() => handleBulkStageUpdate("shortlisted")} disabled={!selectedForBulk.length || bulkLoading} className="pipeline-action-button">Shortlist Selected</button>
-          <button type="button" onClick={() => handleBulkStageUpdate("rejected")} disabled={!selectedForBulk.length || bulkLoading} className="pipeline-action-button danger">Reject Selected</button>
-          <select value={bulkStage} onChange={(e) => setBulkStage(e.target.value)} className="px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white">
-            <option value="">Move selected to stage...</option>
-            {ATS_STAGE_OPTIONS.filter((stage) => stage.value !== "applied").map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Search & Filter</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+          <div className="relative lg:col-span-2">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <input type="text" placeholder="Name, email, ID..." aria-label="Search candidates" className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+          </div>
+          <select aria-label="Filter by stage" className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">All Stages</option>
+            {ATS_STAGE_OPTIONS.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
           </select>
-          <button type="button" onClick={() => handleBulkStageUpdate()} disabled={!selectedForBulk.length || !bulkStage || bulkLoading} className="pipeline-action-button">Apply Stage</button>
+          <select aria-label="Filter by assigned JD" className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" value={jdFilter} onChange={(event) => setJdFilter(event.target.value)}>
+            <option value="all">All JDs</option>
+            {jdOptions.map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}
+          </select>
+          <input type="number" aria-label="Minimum score" value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="Min %" className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" />
+          <input type="number" aria-label="Maximum score" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} placeholder="Max %" className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm font-medium dark:text-white" />
         </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400">{selectedForBulk.length} selected for bulk update</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Showing {paginatedCandidates.length} of {filteredCandidates.length}</p>
       </div>
+
+      {selectedForBulk.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-50 to-blue-50/50 dark:from-blue-900/15 dark:to-blue-900/5 rounded-3xl border border-blue-200 dark:border-blue-800 shadow-sm p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckSquare size={20} className="text-blue-600 dark:text-blue-400" />
+            <div>
+              <p className="font-bold text-slate-900 dark:text-white">{selectedForBulk.length} candidate{selectedForBulk.length !== 1 ? "s" : ""} selected</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">Choose an action to apply to selected candidates</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            <button type="button" onClick={() => handleBulkStageUpdate("shortlisted")} disabled={bulkLoading} className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-bold transition-all" aria-label={`Move ${selectedForBulk.length} candidates to shortlisted`}>
+              ✓ Shortlist All
+            </button>
+            <button type="button" onClick={() => handleBulkStageUpdate("rejected")} disabled={bulkLoading} className="px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-bold transition-all" aria-label={`Reject ${selectedForBulk.length} candidates`}>
+              ✕ Reject All
+            </button>
+            <div className="flex items-center gap-2">
+              <select value={bulkStage} onChange={(e) => setBulkStage(e.target.value)} className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white" aria-label="Select stage for bulk action">
+                <option value="">Move to stage...</option>
+                {ATS_STAGE_OPTIONS.filter((stage) => stage.value !== "applied").map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
+              </select>
+              <button type="button" onClick={() => handleBulkStageUpdate()} disabled={!bulkStage || bulkLoading} className="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-bold transition-all" aria-label={`Move ${selectedForBulk.length} candidates to selected stage`}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">

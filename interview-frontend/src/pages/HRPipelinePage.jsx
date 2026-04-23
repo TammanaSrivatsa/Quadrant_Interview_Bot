@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Eye, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Eye, RefreshCw, ThumbsDown, ThumbsUp, ArrowRight } from "lucide-react";
 import StatusBadge from "../components/StatusBadge";
 import ScoreBadge from "../components/ScoreBadge";
+import PageHeader from "../components/PageHeader";
 import { hrApi } from "../services/api";
 import { ATS_STAGE_DEFINITIONS as PIPELINE_STAGES, normalizeStageKey } from "../utils/stages";
 
@@ -150,50 +151,67 @@ export default function HRPipelinePage() {
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 page-enter">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">HR Pipeline</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Drag candidates between ATS stages and manage the recruiting pipeline visually.</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="pipeline-filter-wrap">
-            <label htmlFor="pipeline-jd-filter" className="pipeline-filter-label">JD Filter</label>
-            <select id="pipeline-jd-filter" value={selectedJdId} onChange={(event) => setSelectedJdId(event.target.value)} className="pipeline-filter-select">
-              <option value="all">All JDs</option>
-              {availableJds.map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}
-            </select>
+      <PageHeader
+        title="HR Pipeline"
+        subtitle="View candidates across all ATS pipeline stages. Use quick actions to move candidates forward or reject them."
+        actions={
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <label htmlFor="pipeline-jd-filter" className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Filter</label>
+              <select id="pipeline-jd-filter" value={selectedJdId} onChange={(event) => setSelectedJdId(event.target.value)} className="bg-transparent outline-none text-sm font-medium dark:text-white cursor-pointer" aria-label="Filter pipeline by job description">
+                <option value="all">All JDs</option>
+                {availableJds.map((jd) => <option key={jd.id} value={jd.id}>{jd.title}</option>)}
+              </select>
+            </div>
+            <Link to="/hr/candidates" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all" aria-label="View candidate directory">
+              <Eye size={18} /><span>Candidate List</span>
+            </Link>
+            <button type="button" onClick={loadCandidates} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none" aria-label="Refresh pipeline data">
+              <RefreshCw size={18} /><span>Refresh</span>
+            </button>
           </div>
-          <Link to="/hr/candidates" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"><Eye size={18} /><span>Candidate List</span></Link>
-          <button type="button" onClick={loadCandidates} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center space-x-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none"><RefreshCw size={18} /><span>Refresh</span></button>
-        </div>
-      </div>
+        }
+      />
 
-      {error ? <p className="alert error">{error}</p> : null}
-      {updatingResultId ? <p className="muted text-sm">Updating stage for result #{updatingResultId}...</p> : null}
+      {error && <p className="alert error">{error}</p>}
+      {updatingResultId && <p className="text-xs font-medium text-blue-600 dark:text-blue-400 flex items-center gap-2"><span className="inline-block w-2 h-2 bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse"></span>Updating stage...</p>}
 
       {!totalCandidates ? (
-        <section className="card stack empty-state-card">
-          <p className="eyebrow">Pipeline</p>
-          <h3>{selectedJdId === "all" ? "No candidates available" : "No candidates for selected JD"}</h3>
-          <p className="muted">{selectedJdId === "all" ? "Candidates will appear here once applications are available." : "Try another JD or switch back to All JDs."}</p>
-        </section>
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+          <div className="text-slate-300 dark:text-slate-600 mb-4 text-4xl">📋</div>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{selectedJdId === "all" ? "Pipeline is empty" : "No candidates for this JD"}</h3>
+          <p className="text-slate-600 dark:text-slate-400 mb-6">{selectedJdId === "all" ? "Candidates will appear here once they start interviewing." : "Try another JD or switch back to All JDs to see candidates."}</p>
+          <Link to="/hr/candidates" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-all">
+            View all candidates
+            <ArrowRight size={16} />
+          </Link>
+        </div>
       ) : (
-        <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 auto-cols-fr">
           {PIPELINE_STAGES.map((stage) => {
             const stageCandidates = groupedCandidates[stage.key] || [];
-            if (!stageCandidates.length) return null;
+            const isEmpty = stageCandidates.length === 0;
+
             return (
-              <div key={stage.key} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <div className="px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 dark:text-white">{stage.label} <span className="text-slate-500 text-sm">({stageCandidates.length} candidates)</span></h3>
-                  <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-sm font-bold rounded-full">{stageCandidates.length}</span>
-                </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {stageCandidates.map((candidate) => (
-                      <CandidateCard key={candidate.result_id} candidate={candidate} onQuickAction={handleQuickAction} quickActionLoadingId={updatingResultId} />
-                    ))}
+              <div key={stage.key} className="flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow">
+                <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-50/0 dark:from-slate-800 dark:to-slate-800/0 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-white text-sm">{stage.label}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{stageCandidates.length} candidate{stageCandidates.length !== 1 ? "s" : ""}</p>
                   </div>
+                  <span className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs font-bold rounded-lg">{stageCandidates.length}</span>
+                </div>
+
+                <div className="flex-1 p-3 space-y-3 min-h-[60vh] overflow-y-auto">
+                  {isEmpty ? (
+                    <div className="flex items-center justify-center h-32 text-center">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">No candidates yet</p>
+                    </div>
+                  ) : (
+                    stageCandidates.map((candidate) => (
+                      <CandidateCard key={candidate.result_id} candidate={candidate} onQuickAction={handleQuickAction} quickActionLoadingId={updatingResultId} />
+                    ))
+                  )}
                 </div>
               </div>
             );
