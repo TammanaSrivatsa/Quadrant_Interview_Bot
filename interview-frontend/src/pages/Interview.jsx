@@ -155,21 +155,6 @@ function getPreferredAudioMimeType() {
   return candidates.find((t) => window.MediaRecorder.isTypeSupported(t)) || "";
 }
 
-function VoiceConfidenceBar({ metrics }) {
-  if (!metrics) return null;
-  const pct = Math.round(metrics.confidence_score * 100);
-  const color = pct >= 70 ? "bg-emerald-500" : pct >= 45 ? "bg-amber-500" : "bg-red-500";
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="text-slate-400 uppercase tracking-widest font-bold">Voice</span>
-      <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-slate-300 font-black w-8 text-right">{pct}%</span>
-    </div>
-  );
-}
-
 function TabSwitchAlert({ count }) {
   if (count === 0) return null;
   return (
@@ -809,15 +794,7 @@ export default function Interview() {
                 </div>
               </div>
 
-              {voiceMetrics && (
-                <div className="bg-slate-800/50 rounded-xl px-4 py-2 border border-slate-700/50">
-                  <VoiceConfidenceBar metrics={voiceMetrics} />
-                  <div className="flex gap-4 mt-1 text-[10px] text-slate-500">
-                    <span>{voiceMetrics.speaking_rate} wpm</span>
-                    <span>Fillers: {voiceMetrics.filler_count}</span>
-                  </div>
-                </div>
-              )}
+              
 
               <textarea
                 className="w-full h-44 bg-slate-800 border border-slate-700 rounded-xl p-4 text-base text-white outline-none focus:ring-2 focus:ring-blue-500/30 resize-none font-medium leading-relaxed"
