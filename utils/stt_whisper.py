@@ -2,42 +2,87 @@
 utils/stt_whisper.py
 
 Dynamic transcription - uses whichever API provider is available:
-1. Groq (has Whisper API) - preferred
-2. OpenAI Whisper
-3. Gemini (if GEMINI_API_KEY explicitly set)
-
-Supports multiple voice accents for better Indian English transcription.
+1. OpenAI Whisper - preferred
+2. Groq (has Whisper API)
+3. Gemini (if GEMINI_API_KEY set)
 """
 from __future__ import annotations
 
 import base64
 import logging
 import os
+import re
 from pathlib import Path
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-# Map frontend accent codes to Whisper language codes and prompts
-ACCENT_PRESETS = {
-    "en-IN": {  # Indian English
-        "language": "en",
-        "prompt": "This is Indian English speech with possible regional accents. Transcribe accurately."
-    },
-    "en-US": {  # American English
-        "language": "en",
-        "prompt": "This is American English speech. Transcribe accurately."
-    },
-    "en-GB": {  # British English
-        "language": "en",
-        "prompt": "This is British English speech. Transcribe accurately."
-    },
-    "en-AU": {  # Australian English
-        "language": "en",
-        "prompt": "This is Australian English speech. Transcribe accurately."
-    },
-}
+
+def _normalize_for_match(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", text.lower())).strip()
+
+
+def _clean_transcript_text(text: str) -> str:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+
+    lowered = cleaned.lower()
+    blocked_fragments = [
+        "please transcribe it accurately",
+        "this is a recording of a professional interview candidate answering a question",
+        "transcribed by",
+        "transcription by",
+        "otter.ai",
+        "thank you for watching",
+        "thanks for watching",
+        "please subscribe",
+        "subtitles by",
+        "subtitle by",
+        "translated by",
+        "translation by",
+        "caption by",
+        "captions by",
+        "amara.org",
+    ]
+    if any(fragment in lowered for fragment in blocked_fragments):
+        logger.warning("STT text dropped by blocked fragment rule: '%s'", cleaned)
+        return ""
+
+    if re.search(r"https?://\S+", lowered):
+        logger.warning("STT text dropped due to URL presence: '%s'", cleaned)
+        return ""
+
+    words = re.findall(r"[a-z0-9']+", lowered)
+
+    # Drop short meta-only outputs like "Transcription by XYZ Translation by".
+    meta_terms = ["transcription", "translation", "subtitle", "subtitles", "caption", "captions", "subscribe", "watching"]
+    meta_hits = sum(1 for term in meta_terms if term in lowered)
+    if len(words) <= 8 and meta_hits >= 2:
+        logger.warning("STT text dropped: short meta-only phrase '%s'", cleaned)
+        return ""
+
+    if len(words) == 1 and len(words[0]) > 30:
+        logger.warning("STT text dropped: suspicious single long token '%s'", cleaned)
+        return ""
+
+    # Collapse immediate repeated phrases: "hello hello" -> "hello"
+    tokens = re.findall(r"[A-Za-z0-9']+", cleaned)
+    if len(tokens) >= 2:
+        deduped = []
+        for token in tokens:
+            if deduped and _normalize_for_match(deduped[-1]) == _normalize_for_match(token):
+                continue
+            deduped.append(token)
+        cleaned = " ".join(deduped).strip()
+
+    if len(cleaned.split()) < 2:
+        # Keep one-word answers like "yes" or "no" only when short and common.
+        if _normalize_for_match(cleaned) not in {"yes", "no", "maybe"}:
+            return ""
+
+    return cleaned
 
 
 def _resolve_suffix(filename: str | None) -> str:
@@ -85,90 +130,63 @@ def transcribe_audio_bytes(
     
     suffix = _resolve_suffix(filename)
     mime_type = _mime(suffix)
+    file_to_send = filename or f"audio{suffix}"
 
-    # Get accent-specific settings
-    accent_config = ACCENT_PRESETS.get(language, ACCENT_PRESETS["en-IN"])
-    lang_code = accent_config["language"]
-    prompt = accent_config["prompt"]
-    
-    logger.info(f"TRANSCRIBE: language={language}, lang_code={lang_code}, prompt={prompt[:50]}...")
-    logger.info(f"TRANSCRIBE: audio_size={len(audio_bytes) if audio_bytes else 0} bytes")
-    
-    # Only add context_hint if it's helpful and short (not full question text)
-    # This prevents the question from being echoed in the transcript
-    if context_hint and len(context_hint.strip()) < 100:
-        prompt += f" Context: {context_hint.strip()[:50]}"
+    # Keep prompt minimal to reduce prompt leakage into transcript output.
+    prompt = "Interview answer transcription."
+    if context_hint:
+        prompt += f" Context: {context_hint}"
 
     # Try OpenAI Whisper first
     if openai_key:
         try:
+            logger.info("OpenAI Whisper: audio_size=%d, mime_type=%s, language=%s", len(audio_bytes), mime_type, language or "en")
             url = "https://api.openai.com/v1/audio/transcriptions"
-            files = {"file": (filename or "audio.webm", audio_bytes, mime_type)}
-            data = {
-                "model": "whisper-1", 
-                "language": lang_code, 
-                "prompt": prompt,
-                "response_format": "json"
-            }
+            files = {"file": (file_to_send, audio_bytes, mime_type)}
+            data = {"model": "whisper-1", "language": language or "en", "prompt": prompt}
             headers = {"Authorization": f"Bearer {openai_key}"}
             
-            logger.info(f"Calling OpenAI Whisper API with {len(audio_bytes)} bytes, lang={lang_code}")
             response = requests.post(url, files=files, data=data, headers=headers, timeout=60)
-            logger.info(f"OpenAI response status: {response.status_code}")
-            
-            response.raise_for_status()
+            if response.status_code != 200:
+                logger.warning("OpenAI Whisper error response: %s", response.text)
+                response.raise_for_status()
+                
             result = response.json()
-            text = result.get("text", "").strip() if result else ""
-            
-            logger.info(f"OpenAI transcription response: {result}")
-            logger.info(f"Extracted text: '{text}'")
+            text = _clean_transcript_text(result.get("text", "") if result else "")
+
             return {
                 "text": text,
                 "confidence": 0.95 if text else 0.0,
                 "low_confidence": not bool(text),
-                "language": lang_code,
+                "language": language or "en",
             }
-        except requests.exceptions.HTTPError as exc:
-            logger.error(f"OpenAI HTTP error: {exc.response.status_code} - {exc.response.text}")
-            # Try without prompt as fallback
-            try:
-                data = {"model": "whisper-1", "language": lang_code}
-                response = requests.post(url, files=files, data=data, headers=headers, timeout=60)
-                response.raise_for_status()
-                result = response.json()
-                text = result.get("text", "").strip() if result else ""
-                logger.info(f"OpenAI fallback transcription: '{text}'")
-                return {"text": text, "confidence": 0.8 if text else 0.0, "low_confidence": not bool(text), "language": lang_code}
-            except Exception as fallback_exc:
-                logger.error(f"OpenAI fallback also failed: {fallback_exc}")
-                raise RuntimeError(f"OpenAI transcription failed: {exc}")
         except Exception as exc:
             logger.warning("OpenAI transcription failed: %s", exc)
 
-    # Try Groq second (they have Whisper API - same as OpenAI)
+    # Try Groq second
     if groq_api_key:
         try:
             url = "https://api.groq.com/openai/v1/audio/transcriptions"
-            files = {"file": (filename or "audio.webm", audio_bytes, mime_type)}
-            data = {"model": "whisper-large-v3", "language": lang_code, "prompt": prompt}
+            files = {"file": (file_to_send, audio_bytes, mime_type)}
+            data = {"model": "whisper-large-v3", "language": language or "en", "prompt": prompt}
             headers = {"Authorization": f"Bearer {groq_api_key}"}
             
             response = requests.post(url, files=files, data=data, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
-            text = result.get("text", "").strip() if result else ""
+            text = _clean_transcript_text(result.get("text", "") if result else "")
             
             logger.info("Groq transcription successful")
             return {
                 "text": text,
                 "confidence": 0.95 if text else 0.0,
                 "low_confidence": not bool(text),
-                "language": lang_code,
+                "language": language or "en",
             }
         except Exception as exc:
             logger.warning("Groq transcription failed: %s", exc)
 
-    # Try Gemini last (only if explicitly configured)
+    # Try Gemini last
     if gemini_api_key:
         try:
             encoded_audio = base64.b64encode(audio_bytes).decode('utf-8')
@@ -193,20 +211,16 @@ def transcribe_audio_bytes(
             if candidates:
                 parts = candidates[0].get("content", {}).get("parts", [])
                 if parts:
-                    text = parts[0].get("text", "").strip()
+                    text = _clean_transcript_text(parts[0].get("text", ""))
             
             logger.info("Gemini transcription successful")
             return {
                 "text": text,
                 "confidence": 0.95 if text else 0.0,
                 "low_confidence": not bool(text),
-                "language": lang_code,
+                "language": language or "en",
             }
         except Exception as exc:
             logger.warning("Gemini transcription failed: %s", exc)
 
-    # No transcription service available
-    raise RuntimeError(
-        "No transcription service available. Set one of: "
-        "GROQ_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in .env"
-    )
+    raise RuntimeError("No transcription service available. Set one of: GROQ_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")

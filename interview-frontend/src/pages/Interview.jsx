@@ -15,11 +15,11 @@ import { useFullScreen } from "../hooks/useFullScreen";
 import HelpSupportButton from "../components/HelpSupportButton";
 import { useAnnounce } from "../hooks/useAccessibility";
 
-const SILENCE_THRESHOLD_RMS = 0.005;
-const SILENCE_RATIO_THRESHOLD = 0.85;
-const TTS_TO_MIC_GUARD_MS = 1200;
-const MIN_AUDIO_BLOB_BYTES = 1200;
-const MIN_RECORDING_MS = 900;
+const SILENCE_THRESHOLD_RMS = 0.01;      // More permissive
+const SILENCE_RATIO_THRESHOLD = 0.70;    // Allow natural pauses
+const TTS_TO_MIC_GUARD_MS = 2500;        // Extended (was 1200)
+const MIN_AUDIO_BLOB_BYTES = 1500;
+const MIN_RECORDING_MS = 1000;
 
 let sharedAudioContext = null;
 function getAudioContext() {
@@ -618,7 +618,14 @@ export default function Interview() {
     }
     stopSpeaking();
     try {
-      let recStream = hasActiveAudioTrack(streamRef.current) ? new MediaStream(streamRef.current.getAudioTracks()) : await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,        // Prevents TTS bleed
+          noiseSuppression: true,        // Filters background
+          autoGainControl: true,         // Auto volume control
+          sampleRate: { ideal: 16000 }   // Optimal for Whisper
+        }
+      });
       audioStreamRef.current = recStream;
       recordedChunksRef.current = [];
       const rec = new window.MediaRecorder(recStream, { mimeType: getPreferredAudioMimeType() });
@@ -652,7 +659,7 @@ export default function Interview() {
           setTimeout(() => setProctorAlert(""), 6000);
         }
       }
-    } catch {}
+    } catch { }
   }, [sessionId, previewReady, announce]);
 
   useEffect(() => {
