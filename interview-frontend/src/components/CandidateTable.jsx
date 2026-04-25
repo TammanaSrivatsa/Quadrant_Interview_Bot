@@ -1,9 +1,23 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import StatusBadge from "./StatusBadge";
+import DeleteConfirmModal from "./DeleteConfirmModal";
 import { Calendar, Eye, Trash2 } from "lucide-react";
 
 export default function CandidateTable({ candidates, onDeleteCandidate, onScheduleCandidate }) {
+  const [deleteModal, setDeleteModal] = useState({ open: false, candidate: null });
+
+  const handleDeleteClick = (candidate) => {
+    setDeleteModal({ open: true, candidate });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteModal.candidate && onDeleteCandidate) {
+      await onDeleteCandidate(deleteModal.candidate);
+      setDeleteModal({ open: false, candidate: null });
+    }
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -72,7 +86,7 @@ export default function CandidateTable({ candidates, onDeleteCandidate, onSchedu
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDeleteCandidate?.(candidate)}
+                    onClick={() => handleDeleteClick(candidate)}
                     aria-label={`Delete ${candidate.name || "candidate"}`}
                     className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all"
                   >
@@ -84,6 +98,17 @@ export default function CandidateTable({ candidates, onDeleteCandidate, onSchedu
           ))}
         </tbody>
       </table>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteModal.open}
+        onClose={() => setDeleteModal({ open: false, candidate: null })}
+        onConfirm={handleConfirmDelete}
+        title="Delete Candidate"
+        message="Are you sure you want to delete this candidate? All their data and interview sessions will be permanently removed."
+        itemName={deleteModal.candidate?.name}
+        confirmText="Delete Candidate"
+      />
     </div>
   );
 }

@@ -276,9 +276,9 @@ export default function HRCandidatesPage() {
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-display">Candidate Directory</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Review ATS scores, assigned JDs, pipeline stages, recommendations, compare candidates, and apply bulk actions safely.</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button type="button" onClick={handleExportCsv} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl font-bold flex items-center space-x-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"><Download size={16} /><span>Export</span></button>
-          <button type="button" onClick={() => loadAllCandidates()} className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all" title="Refresh"><RefreshCw size={16} /></button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={handleExportCsv} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-3 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-sm"><Download size={14} /><span>Export</span></button>
+          <button type="button" onClick={() => loadAllCandidates()} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-3 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-sm" title="Refresh"><RefreshCw size={14} /><span>Refresh</span></button>
         </div>
       </div>
 

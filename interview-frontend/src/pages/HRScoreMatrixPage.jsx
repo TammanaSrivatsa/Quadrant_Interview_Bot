@@ -299,8 +299,13 @@ export default function HRScoreMatrixPage() {
                 <th className="px-6 py-5 min-w-[110px]"><SortButton column="semanticScore" label="Semantic" sortKey={sortConfig.key} onSort={requestSort} /></th>
                 <th className="px-6 py-5 min-w-[110px]"><SortButton column="skillMatchScore" label="Skill Match" sortKey={sortConfig.key} onSort={requestSort} /></th>
                 <th className="px-6 py-5 min-w-[110px]"><SortButton column="resumeScore" label="Resume" sortKey={sortConfig.key} onSort={requestSort} /></th>
+<<<<<<< HEAD
 <th className="px-6 py-5 min-w-[110px]"><SortButton column="interviewScore" label="Interview" sortKey={sortConfig.key} onSort={requestSort} /></th>
                   <th className="px-6 py-5 min-w-[110px]"><SortButton column="communicationScore" label="Comm." sortKey={sortConfig.key} onSort={requestSort} /></th>
+=======
+                <th className="px-6 py-5 min-w-[110px]"><SortButton column="interviewScore" label="Interview" sortKey={sortConfig.key} onSort={requestSort} /></th>
+                <th className="px-6 py-5 min-w-[110px]"><SortButton column="communicationScore" label="Comm." sortKey={sortConfig.key} onSort={requestSort} /></th>
+>>>>>>> 08271abfeab8545a7df94d09e16ee51b80e693cb
                 <th className="px-6 py-5 min-w-[110px] bg-blue-50/20 dark:bg-blue-900/10"><SortButton column="finalAIScore" label="Final AI" sortKey={sortConfig.key} onSort={requestSort} /></th>
                 <th className="px-6 py-5 text-[10px] text-slate-400 uppercase tracking-widest font-black">Decision</th>
                 <th className="px-6 py-5 text-[10px] text-slate-400 uppercase tracking-widest font-black">Actions</th>

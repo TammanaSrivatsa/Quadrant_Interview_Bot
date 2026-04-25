@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, useId } from "react";
-import { useNavigate } from "react-router-dom";
 import { Users, UserCheck, UserX, CheckCircle2, Plus, TrendingUp } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import MetricCard from "../components/MetricCard";
@@ -34,19 +33,19 @@ const EMPTY_LIST = [];
 function ChartCard({ title, subtitle, accent, children }) {
   const titleId = useId();
   return (
-    <div className={`bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden ${accent ? `chart-card-accent ${accent}` : ""}`}>
-      <div className="p-6 border-b border-slate-100 dark:border-slate-800">
-        <h2 id={titleId} className="text-xl font-bold text-slate-900 dark:text-white">{title}</h2>
-        {subtitle ? <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{subtitle}</p> : null}
+    <div className={`chart-card ${accent ? `chart-card-accent ${accent}` : ""}`}>
+      <div className="p-5 border-b border-slate-100 dark:border-slate-800/50">
+        <h2 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">{title}</h2>
+        {subtitle ? <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{subtitle}</p> : null}
       </div>
-      <div className="p-6" aria-labelledby={titleId}>{children}</div>
+      <div className="p-5" aria-labelledby={titleId}>{children}</div>
     </div>
   );
 }
 
 export default function HRDashboardPage() {
-  const navigate = useNavigate();
   const [dashboard, setDashboard] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [ranked, setRanked] = useState([]);
   const [candidatesData, setCandidatesData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,7 +56,6 @@ export default function HRDashboardPage() {
   const { announce } = useAnnounce();
 
   const overview = dashboard?.analytics?.overview || {};
-  const pipeline = dashboard?.analytics?.pipeline ?? EMPTY_LIST;
   const funnel = dashboard?.analytics?.funnel ?? EMPTY_LIST;
 
   const chartReadyFunnel = useMemo(() => funnel.map((item) => ({ name: item.label, value: item.count, fill: "#2563eb" })), [funnel]);
@@ -171,8 +169,12 @@ export default function HRDashboardPage() {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <ChartCard title="Hiring Funnel" subtitle="Applied → shortlisted → interview completed → selected" accent="blue">
               {!chartReadyFunnel.length ? (
-                <div className="text-center py-12 text-slate-500 dark:text-slate-400">
-                  {loading ? "Loading..." : "No candidates yet"}
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    <TrendingUp size={24} className="text-slate-400" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">No candidates yet</p>
+                  <p className="text-xs text-slate-500">Post a job to attract candidates and build your pipeline</p>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={250}>
