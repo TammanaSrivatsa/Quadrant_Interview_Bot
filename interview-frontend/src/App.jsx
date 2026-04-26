@@ -1,32 +1,46 @@
+import { lazy, Suspense, Component } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardLayout from "./layout/DashboardLayout";
 import { ToastProvider } from "./context/ToastContext";
 import { useAuth } from "./context/useAuth";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
-import HRDashboardPage from "./pages/HRDashboardPage";
-import HRCandidatesPage from "./pages/HRCandidatesPage";
-import HRCandidateDetailPage from "./pages/HRCandidateDetailPage";
-import HRInterviewListPage from "./pages/HRInterviewListPage";
-import HRInterviewDetailPage from "./pages/HRInterviewDetailPage";
-import HRScoreMatrixPage from "./pages/HRScoreMatrixPage";
-import HRJdManagementPage from "./pages/HRJdManagementPage";
-import HRJdDetailPage from "./pages/HRJdDetailPage";
-import HRAnalyticsPage from "./pages/HRAnalyticsPage";
-import HRBackupPage from "./pages/HRBackupPage";
-import HRProctoringPage from "./pages/HRProctoringPage";
-import HRPipelinePage from "./pages/HRPipelinePage";
-import CandidateComparisonPage from "./pages/CandidateComparisonPage";
-import CandidateDashboardPage from "./pages/CandidateDashboardPage";
-import PreCheck from "./pages/PreCheck";
-import Interview from "./pages/Interview";
-import Completed from "./pages/Completed";
-import FinalResultPage from "./pages/FinalResultPage";
 import SettingsPage from "./pages/SettingsPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import HRDashboardPage from "./pages/HRDashboardPage";
+import HRCandidatesPage from "./pages/HRCandidatesPage";
+import HRJdManagementPage from "./pages/HRJdManagementPage";
+import CandidateDashboardPage from "./pages/CandidateDashboardPage";
+import Completed from "./pages/Completed";
 import "./App.css";
+
+const PreCheck = lazy(() => import("./pages/PreCheck"));
+const Interview = lazy(() => import("./pages/Interview"));
+const HRCandidateDetailPage = lazy(() => import("./pages/HRCandidateDetailPage"));
+const HRInterviewListPage = lazy(() => import("./pages/HRInterviewListPage"));
+const HRInterviewDetailPage = lazy(() => import("./pages/HRInterviewDetailPage"));
+const HRScoreMatrixPage = lazy(() => import("./pages/HRScoreMatrixPage"));
+const HRJdDetailPage = lazy(() => import("./pages/HRJdDetailPage"));
+const HRAnalyticsPage = lazy(() => import("./pages/HRAnalyticsPage"));
+const HRBackupPage = lazy(() => import("./pages/HRBackupPage"));
+const HRProctoringPage = lazy(() => import("./pages/HRProctoringPage"));
+const HRPipelinePage = lazy(() => import("./pages/HRPipelinePage"));
+const CandidateComparisonPage = lazy(() => import("./pages/CandidateComparisonPage"));
+const FinalResultPage = lazy(() => import("./pages/FinalResultPage"));
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="text-center">
+        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Loading page...</p>
+      </div>
+    </div>
+  );
+}
 
 function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -49,59 +63,53 @@ function PublicOnlyRoute({ children }) {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
-      <Route path="/signup" element={<PublicOnlyRoute><SignupPage /></PublicOnlyRoute>} />
-      <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPasswordPage /></PublicOnlyRoute>} />
-      <Route path="/reset-password/:token" element={<PublicOnlyRoute><ResetPasswordPage /></PublicOnlyRoute>} />
+    <ErrorBoundary>
+      <ToastProvider>
+        <Routes>
+        <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
+        <Route path="/signup" element={<PublicOnlyRoute><SignupPage /></PublicOnlyRoute>} />
+        <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPasswordPage /></PublicOnlyRoute>} />
+        <Route path="/reset-password/:token" element={<PublicOnlyRoute><ResetPasswordPage /></PublicOnlyRoute>} />
 
-      {/* ── INTERVIEW ROUTES — NO LOGIN REQUIRED ─────────────────────────────
-          These are accessed directly from the email link.
-          The backend validates the candidate via session cookie if present,
-          or handles it in PreCheck. No frontend auth guard needed. */}
-      <Route path="/interview/:resultId" element={<PreCheck />} />
-      <Route path="/interview/:resultId/live" element={<Interview />} />
-      <Route path="/interview/:resultId/completed" element={<Completed />} />
+        <Route path="/interview/:resultId" element={<Suspense fallback={<PageLoader />}><PreCheck /></Suspense>} />
+        <Route path="/interview/:resultId/live" element={<Suspense fallback={<PageLoader />}><Interview /></Suspense>} />
+        <Route path="/interview/:resultId/completed" element={<Completed />} />
 
-      {/* HR routes — login required */}
-      <Route element={<ProtectedRoute role="hr" />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/hr" element={<HRDashboardPage />} />
-          <Route path="/hr/jds" element={<HRJdManagementPage />} />
-          <Route path="/hr/jds/:jdId" element={<HRJdDetailPage />} />
-          <Route path="/hr/candidates" element={<HRCandidatesPage />} />
-          <Route path="/hr/pipeline" element={<HRPipelinePage />} />
-          <Route path="/hr/compare" element={<CandidateComparisonPage />} />
-          <Route path="/hr/candidates/:candidateUid" element={<HRCandidateDetailPage />} />
-          <Route path="/hr/interviews" element={<HRInterviewListPage />} />
-          <Route path="/hr/interviews/:id" element={<HRInterviewDetailPage />} />
-          <Route path="/hr/matrix" element={<HRScoreMatrixPage />} />
-          <Route path="/hr/analytics" element={<HRAnalyticsPage />} />
-          <Route path="/hr/backup" element={<HRBackupPage />} />
-          <Route path="/hr/proctoring/:sessionId" element={<HRProctoringPage />} />
+        <Route element={<ProtectedRoute role="hr" />}>
+          <Route element={<DashboardLayout />}>
+            <Route path="/hr" element={<HRDashboardPage />} />
+            <Route path="/hr/jds" element={<HRJdManagementPage />} />
+            <Route path="/hr/jds/:jdId" element={<Suspense fallback={<PageLoader />}><HRJdDetailPage /></Suspense>} />
+            <Route path="/hr/candidates" element={<HRCandidatesPage />} />
+            <Route path="/hr/pipeline" element={<Suspense fallback={<PageLoader />}><HRPipelinePage /></Suspense>} />
+            <Route path="/hr/compare" element={<Suspense fallback={<PageLoader />}><CandidateComparisonPage /></Suspense>} />
+            <Route path="/hr/candidates/:candidateUid" element={<Suspense fallback={<PageLoader />}><HRCandidateDetailPage /></Suspense>} />
+            <Route path="/hr/interviews" element={<Suspense fallback={<PageLoader />}><HRInterviewListPage /></Suspense>} />
+            <Route path="/hr/interviews/:id" element={<Suspense fallback={<PageLoader />}><HRInterviewDetailPage /></Suspense>} />
+            <Route path="/hr/matrix" element={<Suspense fallback={<PageLoader />}><HRScoreMatrixPage /></Suspense>} />
+            <Route path="/hr/analytics" element={<Suspense fallback={<PageLoader />}><HRAnalyticsPage /></Suspense>} />
+            <Route path="/hr/backup" element={<Suspense fallback={<PageLoader />}><HRBackupPage /></Suspense>} />
+            <Route path="/hr/proctoring/:sessionId" element={<Suspense fallback={<PageLoader />}><HRProctoringPage /></Suspense>} />
+          </Route>
         </Route>
-      </Route>
 
-      {/* Candidate dashboard routes — login required */}
-      <Route element={<ProtectedRoute role="candidate" />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/candidate" element={<CandidateDashboardPage />} />
-          <Route path="/interview/result" element={<FinalResultPage />} />
+        <Route element={<ProtectedRoute role="candidate" />}>
+          <Route element={<DashboardLayout />}>
+            <Route path="/candidate" element={<CandidateDashboardPage />} />
+            <Route path="/interview/result" element={<Suspense fallback={<PageLoader />}><FinalResultPage /></Suspense>} />
+          </Route>
         </Route>
-      </Route>
 
-      {/* Shared settings — accessible by any logged-in user */}
-      <Route element={<ProtectedRoute />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/settings" element={<SettingsPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<DashboardLayout />}>
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
         </Route>
-      </Route>
 
-      <Route path="/" element={<HomeRedirect />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-    </ToastProvider>
+        <Route path="/" element={<HomeRedirect />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
