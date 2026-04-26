@@ -1,81 +1,65 @@
-import React from 'react';
-import { AlertTriangle, Home, RotateCcw } from 'lucide-react';
+import { Component } from "react";
+import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 
-class ErrorBoundary extends React.Component {
+class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
-    this.setState({
-      error,
-      errorInfo,
-    });
-    // You can also log the error to an error reporting service here
-    console.error('Error caught by boundary:', error, errorInfo);
+    console.error("[ErrorBoundary] Caught error:", error, errorInfo);
   }
 
-  handleReset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  handleGoHome = () => {
+    window.location.href = "/";
   };
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
-          <div className="max-w-md w-full">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-8 space-y-6">
-              <div className="flex justify-center">
-                <div className="bg-red-100 dark:bg-red-900/30 p-4 rounded-2xl">
-                  <AlertTriangle size={32} className="text-red-600 dark:text-red-400" />
-                </div>
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
+          <div className="max-w-md w-full text-center">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-8">
+              <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertTriangle className="w-8 h-8 text-amber-600 dark:text-amber-400" />
               </div>
-              
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white font-display">
-                  Oops! Something went wrong
-                </h2>
-                <p className="text-slate-500 dark:text-slate-400">
-                  We encountered an unexpected error. Please try again.
-                </p>
-              </div>
-
-              {process.env.NODE_ENV === 'development' && this.state.error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 space-y-2">
-                  <p className="text-xs font-mono text-red-600 dark:text-red-400 break-words">
-                    {this.state.error.toString()}
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                Something went wrong
+              </h1>
+              <p className="text-slate-600 dark:text-slate-400 mb-6">
+                We encountered an unexpected error. Please try again or return to the home page.
+              </p>
+              {this.state.error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-6">
+                  <p className="text-xs text-red-600 dark:text-red-400 font-mono break-all">
+                    {this.state.error.message || "Unknown error"}
                   </p>
-                  {this.state.errorInfo && (
-                    <details className="text-xs text-slate-600 dark:text-slate-400">
-                      <summary className="cursor-pointer font-semibold">Stack trace</summary>
-                      <pre className="mt-2 overflow-auto bg-white dark:bg-slate-800 p-2 rounded text-[10px] font-mono">
-                        {this.state.errorInfo.componentStack}
-                      </pre>
-                    </details>
-                  )}
                 </div>
               )}
-
               <div className="flex gap-3">
                 <button
-                  onClick={this.handleReset}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all"
+                  onClick={this.handleRetry}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
                 >
-                  <RotateCcw size={16} />
+                  <RefreshCw className="w-4 h-4" />
                   Try Again
                 </button>
-                <a
-                  href="/#/"
-                  className="flex-1 flex items-center justify-center gap-2 py-3 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl transition-all"
+                <button
+                  onClick={this.handleGoHome}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition-colors"
                 >
-                  <Home size={16} />
-                  Home
-                </a>
+                  <Home className="w-4 h-4" />
+                  Go Home
+                </button>
               </div>
             </div>
           </div>
@@ -87,4 +71,31 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+class LoadingBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { isLoading: true };
+  }
+
+  componentDidMount() {
+    this.setState({ isLoading: false });
+  }
+
+  render() {
+    if (this.state.isLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default ErrorBoundary;
+export { ErrorBoundary, LoadingBoundary };
