@@ -1582,15 +1582,14 @@ def submit_interview_answer(
 
     if existing_answer:
         existing_answer.answer_text = payload.answer_text
-        existing_answer.time_taken_seconds = payload.time_taken_sec
+        existing_answer.time_taken_sec = payload.time_taken_sec
         existing_answer.skipped = payload.skipped
-        existing_answer.submitted_at = datetime.utcnow()
     else:
         answer = InterviewAnswer(
             session_id=session.id,
             question_id=question.id,
             answer_text=payload.answer_text,
-            time_taken_seconds=payload.time_taken_sec,
+            time_taken_sec=payload.time_taken_sec,
             skipped=payload.skipped,
         )
         db.add(answer)
