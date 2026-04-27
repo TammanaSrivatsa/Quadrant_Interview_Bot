@@ -1618,6 +1618,8 @@ def submit_interview_answer(
     if not payload.skipped and payload.answer_text:
         session.remaining_time_seconds = max(0, session.remaining_time_seconds - payload.time_taken_sec)
 
+    question.time_taken_seconds = payload.time_taken_sec or 0
+    db.add(question)
     db.commit()
 
     result = db.query(Result).filter(Result.id == session.result_id).first()
