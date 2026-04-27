@@ -1566,7 +1566,11 @@ def start_interview(
         _ensure_session_questions(db, session=session, result=result)
 
     next_question = _create_next_question(db, session, result, "")
-    answered_count = len([q for q in session.questions if q.answer_text and q.answer_text.strip()])
+    answered_count = db.query(InterviewQuestion).filter(
+        InterviewQuestion.session_id == session.id,
+        InterviewQuestion.answer_text.isnot(None),
+        InterviewQuestion.answer_text != ""
+    ).count()
 
     return _compose_start_response(session, next_question, answered_count)
 
@@ -1616,11 +1620,16 @@ def submit_interview_answer(
 
     db.commit()
 
-    next_question = _create_next_question(db, session, session.result, payload.answer_text or "")
-    answered_count = len([q for q in session.questions if q.answer_text and q.answer_text.strip()])
+    result = db.query(Result).filter(Result.id == session.result_id).first()
+    next_question = _create_next_question(db, session, result, payload.answer_text or "")
+    answered_count = db.query(InterviewQuestion).filter(
+        InterviewQuestion.session_id == session.id,
+        InterviewQuestion.answer_text.isnot(None),
+        InterviewQuestion.answer_text != ""
+    ).count()
 
     response = _compose_start_response(session, next_question, answered_count)
-    response["next_question"] = next_question
+    response["next_question"] = _serialize_question(next_question)
     return response
 
 
