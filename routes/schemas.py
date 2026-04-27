@@ -120,12 +120,12 @@ class HrCandidateNotesBody(BaseModel):
     notes: str = Field(default="", max_length=5000)
 
 # Standard API response wrapper
-from pydantic import GenericModel
+from pydantic import BaseModel as _BaseModel
 from typing import Generic, TypeVar, Optional
 
 T = TypeVar('T')
 
-class ApiResponse(GenericModel, Generic[T]):
+class ApiResponse(_BaseModel, Generic[T]):
     success: bool = True
     data: Optional[T] = None
     error: Optional[str] = None
