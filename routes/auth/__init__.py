@@ -1,3 +1,4 @@
 """Authentication route group."""
 
-from .auth import get_current_user, router, login, read_current_user
+from routes.auth.sessions import router
+from routes.dependencies import get_current_user

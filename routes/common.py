@@ -1,9 +1,18 @@
-"""Shared constants and helper functions used by route modules.
+from __future__ import annotations
 
-# Global error handling
-from fastapi import FastAPI, Request
+"""Shared constants and helper functions used by route modules."""
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import logging
+from datetime import datetime, timedelta, timezone
+import os
+import re
+from pathlib import Path
+from urllib.parse import quote_plus
+from uuid import uuid4
+from zoneinfo import ZoneInfo
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -23,20 +32,6 @@ def create_http_exception_handler(app: FastAPI):
             status_code=exc.status_code,
             content={"success": False, "data": None, "error": exc.detail},
         )
-"""
-from __future__ import annotations
-
-from datetime import datetime, timedelta, timezone
-import os
-import re
-from pathlib import Path
-from urllib.parse import quote_plus
-from uuid import uuid4
-from zoneinfo import ZoneInfo
-
-from fastapi import HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from core.config import config
 from ai_engine.phase1.scoring import compute_resume_scorecard
