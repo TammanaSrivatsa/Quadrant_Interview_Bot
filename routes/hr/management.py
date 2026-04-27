@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from routes.auth import get_current_user
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
@@ -34,7 +35,7 @@ from services.pipeline import normalize_stage, record_stage_change, stage_payloa
 from services.local_exports import create_local_backup_archive
 from services.resume_advice import build_resume_advice
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 jd_router = APIRouter(prefix="/hr/jds", tags=["hr-jds"])
 
 

@@ -1,4 +1,29 @@
-"""Shared constants and helper functions used by route modules."""
+"""Shared constants and helper functions used by route modules.
+
+# Global error handling
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+def create_error_handler(app: FastAPI):
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "data": None, "error": "Internal server error"},
+        )
+
+def create_http_exception_handler(app: FastAPI):
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"success": False, "data": None, "error": exc.detail},
+        )
+"""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone

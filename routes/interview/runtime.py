@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
+from routes.auth import get_current_user
 
 from ai_engine.phase1.matching import extract_text_from_file
 
@@ -72,7 +73,7 @@ from utils.stt_whisper import transcribe_audio_bytes
 
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 logger = logging.getLogger(__name__)
 

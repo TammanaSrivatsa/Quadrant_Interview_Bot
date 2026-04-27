@@ -36,6 +36,10 @@ from routes.common import ensure_candidate_profile
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Interview Bot API", version="1.0.0")
+# Register global error handlers
+from routes.common import create_error_handler, create_http_exception_handler
+create_error_handler(app)
+create_http_exception_handler(app)
 
 # Keep startup table creation for local/dev environments.
 Base.metadata.create_all(bind=engine)
