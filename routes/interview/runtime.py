@@ -1619,7 +1619,9 @@ def submit_interview_answer(
     next_question = _create_next_question(db, session, session.result, payload.answer_text or "")
     answered_count = len([q for q in session.questions if q.answer_text and q.answer_text.strip()])
 
-    return _compose_start_response(session, next_question, answered_count)
+    response = _compose_start_response(session, next_question, answered_count)
+    response["next_question"] = next_question
+    return response
 
 
 @router.get("/interview/{result_id}/recheck")
