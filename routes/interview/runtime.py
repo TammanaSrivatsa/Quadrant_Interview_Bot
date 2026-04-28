@@ -1297,7 +1297,7 @@ async def synthesize_question_speech(
         resp = requests.get(
             config.LAMBDA_S3_URL,
             params={"text": text, "voice": voice},
-            timeout=30,
+            timeout=10,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -1307,6 +1307,18 @@ async def synthesize_question_speech(
 
         logger.info("TTS synthesis success voice=%s text_len=%d", voice, len(text))
         return {"ok": True, **data}
+
+    except Exception as exc:
+        logger.error("TTS synthesis failed: %s", exc)
+        # Return degraded response so frontend can fall back to browser TTS
+        return {
+            "ok": True,
+            "audio_url": None,
+            "text": text,
+            "voice": voice,
+            "degraded": True,
+            "error": str(exc),
+        }
 
     except Exception as exc:
         logger.error("TTS synthesis failed: %s", exc)

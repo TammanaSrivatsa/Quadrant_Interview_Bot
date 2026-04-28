@@ -19,10 +19,30 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { authFetch } from "../utils/authFetch";
-import { detectFaces } from "../utils/faceDetection";
+import { interviewApi, proctorApi } from "../services/api";
 
 const MAX_EVENTS_STORED = 200;
+const FRAME_CAPTURE_INTERVAL_MS = 5000; // Capture frame every 5 seconds
+
+// Capture a frame from video element and convert to JPEG blob
+async function captureFrame(videoElement, quality = 0.7) {
+  if (!videoElement || videoElement.readyState < 2) return null;
+  const canvas = document.createElement("canvas");
+  // Downscale to reduce payload size
+  const scale = Math.min(1, 320 / videoElement.videoWidth);
+  canvas.width = videoElement.videoWidth * scale;
+  canvas.height = videoElement.videoHeight * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(-1, 1); // Mirror effect to match displayed video
+  ctx.drawImage(videoElement, -canvas.width, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(blob),
+      "image/jpeg",
+      quality
+    );
+  });
+}
 
 const FILLER_WORDS = [
   "uh", "um", "er", "ah", "like", "you know", "i mean",
@@ -68,11 +88,13 @@ function analyseVoiceConfidence(transcript, durationSeconds) {
   };
 }
 
-export function useProctoring({ sessionId, resultId, interviewToken, enabled = true }) {
+export function useProctoring({ sessionId, resultId, interviewToken, enabled = true, videoRef }) {
   const [proctoringEvents, setProctoringEvents] = useState([]);
   const [voiceMetrics, setVoiceMetrics] = useState(null);
+  const [frameStatus, setFrameStatus] = useState(null);
 
   const eventsRef = useRef([]);
+  const frameIntervalRef = useRef(null);
 
   const pushEvent = useCallback((event) => {
     const stamped = { ...event, timestamp: new Date().toISOString() };
@@ -80,6 +102,55 @@ export function useProctoring({ sessionId, resultId, interviewToken, enabled = t
     setProctoringEvents((prev) => [stamped, ...prev].slice(0, MAX_EVENTS_STORED));
   }, []);
 
+  // Frame capture for CV proctoring
+  useEffect(() => {
+    if (!enabled || !sessionId || !videoRef?.current) return;
+
+    let stopped = false;
+
+    async function captureAndSend() {
+      if (stopped) return;
+      const videoEl = videoRef.current;
+      if (!videoEl || videoEl.readyState < 2) return;
+
+      try {
+        const blob = await captureFrame(videoEl);
+        if (!blob || stopped) return;
+
+        const response = await proctorApi.uploadFrame(sessionId, blob, "scan");
+        if (response && response.event_type) {
+          setFrameStatus(response);
+          // Log suspicious events to proctoring panel
+          if (response.suspicious) {
+            pushEvent({
+              type: response.event_type.toUpperCase(),
+              detail: response.frame_reasons || response.event_type,
+              suspicious: true,
+              compliance_score: response.compliance_score,
+            });
+          }
+        }
+      } catch (err) {
+        // Silently fail - don't block interview for proctoring errors
+        console.warn("Frame capture failed:", err.message);
+      }
+    }
+
+    // Initial capture
+    captureAndSend();
+    // Repeat every 5 seconds
+    frameIntervalRef.current = setInterval(captureAndSend, FRAME_CAPTURE_INTERVAL_MS);
+
+    return () => {
+      stopped = true;
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current);
+        frameIntervalRef.current = null;
+      }
+    };
+  }, [enabled, sessionId, videoRef, pushEvent]);
+
+  // Tab-switch detection
   useEffect(() => {
     if (!enabled || !sessionId) return;
 
@@ -116,5 +187,6 @@ export function useProctoring({ sessionId, resultId, interviewToken, enabled = t
     proctoringEvents,
     voiceMetrics,
     analyseAnswer,
+    frameStatus,
   };
 }

@@ -68,11 +68,16 @@ function extractErrorMessage(error) {
   return error?.message || "Something went wrong. Please try again.";
 }
 
+const API_TIMEOUT_MS = 30000; // 30s timeout for all API calls
+
 async function request(config) {
   try {
     console.log(`[API] Request: ${config.method} ${config.url}`, config.data ? 'with data' : '');
     console.log(`[API] Request data:`, JSON.stringify(config.data));
-    const response = await apiClient(config);
+    const response = await apiClient({
+      ...config,
+      timeout: API_TIMEOUT_MS,
+    });
     console.log(`[API] Response status:`, response.status);
     console.log(`[API] Response headers content-type:`, response.headers["content-type"]);
     console.log(`[API] Response data preview:`, typeof response.data === 'string' ? response.data.substring(0, 100) : JSON.stringify(response.data).substring(0, 200));

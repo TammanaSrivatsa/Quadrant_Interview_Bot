@@ -70,6 +70,10 @@ function useTTS() {
     try {
       const { interviewApi } = await import("../services/api");
       const response = await interviewApi.tts(text, voiceType);
+      // Handle degraded response from backend (Polly Lambda down)
+      if (response.degraded || !response.audio_url) {
+        throw new Error(response.error || "TTS degraded");
+      }
       if (response.audio_url) {
         const audio = new Audio(response.audio_url);
         audioRef.current = audio;
@@ -275,7 +279,8 @@ export default function Interview() {
     proctoringEvents,
     voiceMetrics,
     analyseAnswer,
-  } = useProctoring({ sessionId, resultId, interviewToken, enabled: !!sessionId });
+    frameStatus,
+  } = useProctoring({ sessionId, resultId, interviewToken, enabled: !!sessionId, videoRef });
 
   const tabSwitchCount = proctoringEvents.filter((e) => e.type === "TAB_SWITCH").length;
   const micReady = hasActiveAudioTrack(streamRef.current) || hasActiveAudioTrack(audioStreamRef.current);
@@ -919,11 +924,20 @@ export default function Interview() {
                   <button
                     type="button"
                     onClick={() => handleSubmit(false)}
-                    disabled={isSubmitting || isTranscribing}
+                    disabled={isSubmitting || isTranscribing || loading}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm transition-all disabled:opacity-50"
                   >
-                    <span>{isSubmitting ? "Submitting…" : questionNumber === maxQuestions ? "Finish" : "Submit"}</span>
-                    <Send size={16} />
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Submitting…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{questionNumber === maxQuestions ? "Finish" : "Submit"}</span>
+                        <Send size={16} />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
