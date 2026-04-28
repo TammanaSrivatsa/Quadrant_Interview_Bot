@@ -4,6 +4,7 @@ import traceback
 from .logging import logger
 from utils.s3_utils import async_upload_proctor_image
 
+
 def schedule_proctor_image_upload(
     background: BackgroundTasks,
     session_id: int,
@@ -21,22 +22,26 @@ def schedule_proctor_image_upload(
                 "proctor_image_uploaded",
                 extra={"session_id": session_id, "request_id": request_id, "s3_url": s3_url},
             )
+            # Save S3 URL to database if event_id provided and upload succeeded
             if event_id and s3_url and not s3_url.startswith("proctor-fallback://"):
-                # Import here to avoid circular imports
-                from models import ProctorEvent
-                from database import SessionLocal
-                db = SessionLocal()
                 try:
-                    event = db.query(ProctorEvent).filter(ProctorEvent.id == event_id).first()
-                    if event:
-                        event.image_path = s3_url
-                        db.commit()
-                        logger.info(
-                            "proctor_event_image_path_updated",
-                            extra={"event_id": event_id, "s3_url": s3_url},
-                        )
-                finally:
-                    db.close()
+                    # Import here to avoid circular imports
+                    from models import ProctorEvent
+                    from database import SessionLocal
+                    db = SessionLocal()
+                    try:
+                        event = db.query(ProctorEvent).filter(ProctorEvent.id == event_id).first()
+                        if event:
+                            event.image_path = s3_url
+                            db.commit()
+                            logger.info(
+                                "proctor_event_image_path_updated",
+                                extra={"event_id": event_id, "s3_url": s3_url},
+                            )
+                    finally:
+                        db.close()
+                except Exception as db_err:
+                    logger.warning(f"Failed to save S3 URL to database: {db_err}")
         except Exception:
             logger.exception(
                 "proctor_image_upload_failed",
