@@ -1568,8 +1568,6 @@ def start_interview(
     next_question = _create_next_question(db, session, result, "")
     answered_count = db.query(InterviewAnswer).filter(
         InterviewAnswer.session_id == session.id,
-        InterviewAnswer.answer_text.isnot(None),
-        InterviewAnswer.answer_text != ""
     ).count()
 
     return _compose_start_response(session, next_question, answered_count)
@@ -1629,8 +1627,6 @@ def submit_interview_answer(
     next_question = _create_next_question(db, session, result, payload.answer_text or "")
     answered_count = db.query(InterviewAnswer).filter(
         InterviewAnswer.session_id == session.id,
-        InterviewAnswer.answer_text.isnot(None),
-        InterviewAnswer.answer_text != ""
     ).count()
 
     response = _compose_start_response(session, next_question, answered_count)
