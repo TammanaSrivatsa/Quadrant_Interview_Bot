@@ -1548,8 +1548,29 @@ def start_interview(
 
     _ensure_session_questions(db, session=session, result=result)
 
+    if not result.interview_questions:
+        from services.question_generation import build_question_bundle
+        job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
+        candidate = db.query(Candidate).filter(Candidate.id == result.candidate_id).first()
+        question_count = int(job.question_count or 8) if job else 8
+        bundle = build_question_bundle(
+            resume_text=candidate.resume_text or "",
+            jd_text=job.jd_text or "",
+            jd_dict=job.jd_dict_json or {},
+            job_title=job.title or "",
+            project_ratio=float(job.project_question_ratio or 0.8),
+            question_count=question_count,
+        )
+        result.interview_questions = bundle.get("questions") or []
+        db.commit()
+        _ensure_session_questions(db, session=session, result=result)
+
     next_question = _create_next_question(db, session, result, "")
-    answered_count = len([q for q in session.questions if q.answer_text and q.answer_text.strip()])
+    answered_count = db.query(InterviewQuestion).filter(
+        InterviewQuestion.session_id == session.id,
+        InterviewQuestion.answer_text.isnot(None),
+        InterviewQuestion.answer_text != ""
+    ).count()
 
     return _compose_start_response(session, next_question, answered_count)
 
@@ -1594,15 +1615,27 @@ def submit_interview_answer(
         )
         db.add(answer)
 
+    question.answer_text = payload.answer_text
+    question.skipped = payload.skipped
+
     if not payload.skipped and payload.answer_text:
         session.remaining_time_seconds = max(0, session.remaining_time_seconds - payload.time_taken_sec)
 
+    question.time_taken_seconds = payload.time_taken_sec or 0
+    db.add(question)
     db.commit()
 
-    next_question = _create_next_question(db, session, session.result, payload.answer_text or "")
-    answered_count = len([q for q in session.questions if q.answer_text and q.answer_text.strip()])
+    result = db.query(Result).filter(Result.id == session.result_id).first()
+    next_question = _create_next_question(db, session, result, payload.answer_text or "")
+    answered_count = db.query(InterviewQuestion).filter(
+        InterviewQuestion.session_id == session.id,
+        InterviewQuestion.answer_text.isnot(None),
+        InterviewQuestion.answer_text != ""
+    ).count()
 
-    return _compose_start_response(session, next_question, answered_count)
+    response = _compose_start_response(session, next_question, answered_count)
+    response["next_question"] = _serialize_question(next_question)
+    return response
 
 
 @router.get("/interview/{result_id}/recheck")
@@ -2300,17 +2333,6 @@ def upload_proctor_frame(
 
 
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
-    # Schedule asynchronous upload; any failure is handled and logged by the background task.
-    from services.background_tasks import schedule_proctor_image_upload
-
-    request_id = request.headers.get("X-Request-ID", "")
-    schedule_proctor_image_upload(
-        background_tasks,
-        session.id,
-        raw,
-        timestamp,
-        request_id=request_id,
-    )
     # Immediate placeholders; the client can retrieve the image later via event metadata.
     image_url = ""
     relative_path = ""
@@ -2406,6 +2428,19 @@ def upload_proctor_frame(
     db.commit()
 
     db.refresh(event)
+
+
+    # Schedule asynchronous upload after event is created; pass event_id so S3 URL can be saved.
+    from services.background_tasks import schedule_proctor_image_upload
+    request_id = request.headers.get("X-Request-ID", "")
+    schedule_proctor_image_upload(
+        background_tasks,
+        session.id,
+        raw,
+        timestamp,
+        event_id=event.id,
+        request_id=request_id,
+    )
 
 
 
@@ -2528,7 +2563,7 @@ def hr_proctoring_timeline(
 
                 "suspicious": event.event_type in SUSPICIOUS_TYPES,
 
-                "image_url": f"{base_url}/uploads/{event.image_path}" if event.image_path else None,
+                "image_url": event.image_path if event.image_path and event.image_path.startswith("http") else (f"{base_url}/uploads/{event.image_path}" if event.image_path else None),
 
             }
 

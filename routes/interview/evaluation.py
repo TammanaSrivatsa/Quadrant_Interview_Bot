@@ -88,16 +88,27 @@ def _fallback_evaluation(question: InterviewQuestion, answer_text: str) -> dict[
         }
 
 
-def _batch_llm_evaluate(questions: list[InterviewQuestion]) -> dict[int, dict[str, object]]:
+def _batch_llm_evaluate(questions: list[InterviewQuestion], db: Session = None) -> dict[int, dict[str, object]]:
     """
     Evaluate all answered questions in a SINGLE LLM call to minimize API usage.
     Returns a mapping of question.id -> evaluation dict.
     Falls back to local scoring if the LLM call fails.
     """
-    answerable = [
-        q for q in questions
-        if (q.answer_text or "").strip() and not q.skipped
-    ]
+    # If questions don't have answer_text, check InterviewAnswer table
+    answerable = []
+    for q in questions:
+        answer_text = (q.answer_text or "").strip()
+        if not answer_text and db:
+            # Fallback: check InterviewAnswer table
+            ans = db.query(InterviewAnswer).filter(
+                InterviewAnswer.question_id == q.id
+            ).first()
+            if ans and ans.answer_text:
+                answer_text = ans.answer_text
+                q.answer_text = answer_text  # Backfill
+                q.skipped = ans.skipped or False
+        if answer_text and not q.skipped:
+            answerable.append(q)
     if not answerable:
         return {}
 
@@ -317,10 +328,20 @@ def evaluate_interview(
     section_scores: dict[str, list[float]] = defaultdict(list)
 
     # ONE batched LLM call for all questions (1 API request per interview, not N).
-    llm_results = _batch_llm_evaluate(questions)
+    llm_results = _batch_llm_evaluate(questions, db)
 
     for question in questions:
         answer_text = (question.answer_text or "").strip()
+        # Fallback: check InterviewAnswer if not on question
+        if not answer_text:
+            ans = db.query(InterviewAnswer).filter(
+                InterviewAnswer.question_id == question.id
+            ).first()
+            if ans and ans.answer_text:
+                answer_text = ans.answer_text.strip()
+                question.answer_text = answer_text
+                question.skipped = ans.skipped or False
+        
         if not answer_text or question.skipped:
             evaluation: dict[str, object] = {
                 "question": question.text,
