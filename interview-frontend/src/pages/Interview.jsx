@@ -174,8 +174,31 @@ export default function Interview() {
 
   const [sessionId, setSessionId] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
-  const [questionNumber, setQuestionNumber] = useState(1);
-  const [maxQuestions, setMaxQuestions] = useState(1);
+  const [questionNumber, _setQuestionNumber] = useState(() => {
+    const saved = sessionStorage.getItem(`question-number:${resultId}`);
+    return saved ? parseInt(saved, 10) : 1;
+  });
+  const [maxQuestions, _setMaxQuestions] = useState(() => {
+    const saved = sessionStorage.getItem(`max-questions:${resultId}`);
+    return saved ? parseInt(saved, 10) : 1;
+  });
+
+  // Wrappers that persist to sessionStorage
+  const setQuestionNumber = useCallback((val) => {
+    _setQuestionNumber((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      sessionStorage.setItem(`question-number:${resultId}`, String(next));
+      return next;
+    });
+  }, [resultId]);
+
+  const setMaxQuestions = useCallback((val) => {
+    _setMaxQuestions((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      sessionStorage.setItem(`max-questions:${resultId}`, String(next));
+      return next;
+    });
+  }, [resultId]);
   const [answer, setAnswer] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -294,8 +317,14 @@ export default function Interview() {
       setSessionId(response.session_id);
       sessionStorage.setItem(`session-id:${resultId}`, String(response.session_id));
       setCurrentQuestion(response.current_question);
-      setQuestionNumber(response.question_number || 1);
-      setMaxQuestions(response.max_questions || 1);
+      // Only set question number from sessionStorage (initialized above) or API if > 0
+      // This prevents loadSession from resetting the counter after _advanceAfterAnswer updates it
+      if (response.question_number && response.question_number > 1) {
+        setQuestionNumber(response.question_number);
+      }
+      if (response.max_questions && response.max_questions > 1) {
+        setMaxQuestions(response.max_questions);
+      }
       setTotalTimeLeft(response.remaining_total_seconds || 0);
       setTotalTimeSeconds(response.total_time_seconds || 1200);
       baselineCapturedRef.current = false;
@@ -431,13 +460,29 @@ export default function Interview() {
   // ── advance after answer ───────────────────────────────────────────────────
   const _advanceAfterAnswer = useCallback((response) => {
     stopSpeaking();
+    console.log("[Interview] _advanceAfterAnswer called", {
+      interview_completed: response.interview_completed,
+      has_next: !!response.next_question,
+      next_question: response.next_question?.id,
+      question_number: response.question_number,
+      max_questions: response.max_questions,
+    });
     if (response.interview_completed || !response.next_question) {
       navigate(`/interview/${resultId}/completed`);
       return;
     }
+    console.log("[Interview] Setting question to:", response.next_question?.id, "question_number:", response.question_number);
     setCurrentQuestion(response.next_question);
-    setQuestionNumber(response.question_number || questionNumber + 1);
-    setMaxQuestions(response.max_questions || maxQuestions);
+    setQuestionNumber((prev) => {
+      const next = response.question_number || prev + 1;
+      console.log("[Interview] questionNumber updating:", prev, "->", next);
+      return next;
+    });
+    setMaxQuestions((prev) => {
+      const next = response.max_questions || prev;
+      console.log("[Interview] maxQuestions updating:", prev, "->", next);
+      return next;
+    });
     setTotalTimeLeft(response.remaining_total_seconds || 0);
     setAnswer("");
     setTranscriptionWarning("");
@@ -446,7 +491,7 @@ export default function Interview() {
     autoSubmittedRef.current = false;
     answerStartTimeRef.current = Date.now();
     setAnswerFeedback(null);
-  }, [navigate, resultId, questionNumber, maxQuestions, stopSpeaking]);
+  }, [navigate, resultId, stopSpeaking]);
 
   // ── submit answer ──────────────────────────────────────────────────────────
   const submitAnswer = useCallback(async ({ skipCurrent = false, answerOverride } = {}) => {
