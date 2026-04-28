@@ -317,8 +317,14 @@ export default function Interview() {
       setSessionId(response.session_id);
       sessionStorage.setItem(`session-id:${resultId}`, String(response.session_id));
       setCurrentQuestion(response.current_question);
-      setQuestionNumber(response.question_number || 1);
-      setMaxQuestions(response.max_questions || 1);
+      // Only set question number from sessionStorage (initialized above) or API if > 0
+      // This prevents loadSession from resetting the counter after _advanceAfterAnswer updates it
+      if (response.question_number && response.question_number > 1) {
+        setQuestionNumber(response.question_number);
+      }
+      if (response.max_questions && response.max_questions > 1) {
+        setMaxQuestions(response.max_questions);
+      }
       setTotalTimeLeft(response.remaining_total_seconds || 0);
       setTotalTimeSeconds(response.total_time_seconds || 1200);
       baselineCapturedRef.current = false;
