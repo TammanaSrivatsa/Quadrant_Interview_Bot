@@ -436,8 +436,8 @@ export default function Interview() {
       return;
     }
     setCurrentQuestion(response.next_question);
-    setQuestionNumber(response.question_number || questionNumber + 1);
-    setMaxQuestions(response.max_questions || maxQuestions);
+    setQuestionNumber((prev) => response.question_number || prev + 1);
+    setMaxQuestions((prev) => response.max_questions || prev);
     setTotalTimeLeft(response.remaining_total_seconds || 0);
     setAnswer("");
     setTranscriptionWarning("");
@@ -446,7 +446,7 @@ export default function Interview() {
     autoSubmittedRef.current = false;
     answerStartTimeRef.current = Date.now();
     setAnswerFeedback(null);
-  }, [navigate, resultId, questionNumber, maxQuestions, stopSpeaking]);
+  }, [navigate, resultId, stopSpeaking]);
 
   // ── submit answer ──────────────────────────────────────────────────────────
   const submitAnswer = useCallback(async ({ skipCurrent = false, answerOverride } = {}) => {
