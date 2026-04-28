@@ -27,6 +27,13 @@ function extractErrorMessage(error) {
   const status = error?.response?.status;
   const contentType = error?.response?.headers?.["content-type"] || "";
 
+  if (typeof responseData?.error === "string" && responseData.error.trim()) {
+    return responseData.error;
+  }
+  if (typeof responseData?.data?.detail === "string" && responseData.data.detail.trim()) {
+    return responseData.data.detail;
+  }
+
   const wrappedError = responseData?.error;
   if (typeof wrappedError === "string" && wrappedError.trim()) return wrappedError;
 
@@ -76,7 +83,11 @@ async function request(config) {
     console.log(`[API] Response status:`, response.status);
     console.log(`[API] Response headers content-type:`, response.headers["content-type"]);
     console.log(`[API] Response data preview:`, typeof response.data === 'string' ? response.data.substring(0, 100) : JSON.stringify(response.data).substring(0, 200));
-    return response.data;
+    const payload = response.data;
+    if (payload && typeof payload === "object" && "success" in payload && "data" in payload) {
+      return payload.data;
+    }
+    return payload;
   } catch (error) {
     console.error(`[API] Error status:`, error.response?.status);
     console.error(`[API] Error content-type:`, error.response?.headers?.["content-type"]);
