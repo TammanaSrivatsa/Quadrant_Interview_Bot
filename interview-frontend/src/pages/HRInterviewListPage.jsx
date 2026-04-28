@@ -235,8 +235,6 @@ export default function HRInterviewListPage() {
                     <th>Candidate</th>
                     <th>Job</th>
                     <th>Status</th>
-                    <th>Duration</th>
-                    <th>Score</th>
                     <th>Started</th>
                     <th>Events</th>
                     <th>Actions</th>
@@ -261,8 +259,6 @@ export default function HRInterviewListPage() {
                       </td>
                       <td className="text-sm">{row.job?.title || "—"}</td>
                       <td>{getRowStatusBadge(row)}</td>
-                      <td className="text-sm">{getDurationDisplay(row)}</td>
-                      <td>{getScoreBadge(row)}</td>
                       <td className="text-sm text-slate-500">{formatDateTime(row.started_at)}</td>
                       <td className="text-center">
                         <div className="flex items-center justify-center gap-1">
