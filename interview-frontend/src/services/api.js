@@ -273,6 +273,7 @@ export const hrApi = {
   getJd: (jdId) => request({ method: "get", url: `/hr/jds/${jdId}` }),
   createJd: (payload) => request({ method: "post", url: "/hr/jds", data: payload }),
   updateJd: (jdId, payload) => request({ method: "put", url: `/hr/jds/${jdId}`, data: payload }),
+  updateCustomQuestions: (jdId, payload) => request({ method: "put", url: `/hr/jds/${jdId}/custom-questions`, data: payload }),
   toggleJdActive: (jdId) => request({ method: "post", url: `/hr/jds/${jdId}/toggle-active` }),
   deleteJd: (jdId) => request({ method: "delete", url: `/hr/jds/${jdId}` }),
 

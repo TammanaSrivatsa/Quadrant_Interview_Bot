@@ -29,11 +29,12 @@ from routes.common import (
     upsert_result,
 )
 from routes.dependencies import SessionUser, require_role
-from routes.schemas import HrJDCreateBody, HrJDUpdateBody, InterviewScoreBody, SkillWeightsBody, StageUpdateBody, CandidateCompareBody, CandidateAssignJDBody, HrCandidateNotesBody
+from routes.schemas import HrJDCreateBody, HrJDCustomQuestionsBody, HrJDUpdateBody, InterviewScoreBody, SkillWeightsBody, StageUpdateBody, CandidateCompareBody, CandidateAssignJDBody, HrCandidateNotesBody
 from services.hr_dashboard import build_hr_dashboard_analytics
 from services.pipeline import normalize_stage, record_stage_change, stage_payload
 from services.local_exports import create_local_backup_archive
 from services.resume_advice import build_resume_advice
+from services.question_customization import apply_custom_questions_to_bank, normalize_custom_question_texts
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 jd_router = APIRouter(prefix="/hr/jds", tags=["hr-jds"])
@@ -284,6 +285,7 @@ def _serialize_jd(jd: JobDescription) -> dict[str, object]:
         "is_active": bool(jd.is_active if jd.is_active is not None else True),
         "created_at": jd.created_at,
         "score_weights_json": jd.score_weights_json,
+        "custom_questions": normalize_custom_question_texts(jd.custom_questions),
     }
 
 
@@ -397,10 +399,58 @@ def hr_update_jd(
         jd.total_duration_minutes = int(payload.total_duration_minutes)
     if payload.score_weights_json is not None:
         jd.score_weights_json = payload.score_weights_json
+    if payload.custom_questions is not None:
+        jd.custom_questions = normalize_custom_question_texts(payload.custom_questions)
 
     db.commit()
     db.refresh(jd)
     return {"ok": True, "jd": _serialize_jd(jd)}
+
+
+def _sync_open_result_question_banks_for_jd(db: Session, jd: JobDescription) -> int:
+    synced = 0
+    results = db.query(Result).filter(Result.job_id == jd.id).all()
+    for result in results:
+        locked_session = (
+            db.query(InterviewSession)
+            .filter(
+                InterviewSession.result_id == result.id,
+                InterviewSession.status.in_(["in_progress", "completed"]),
+            )
+            .first()
+        )
+        if locked_session:
+            continue
+        if not result.interview_questions:
+            continue
+        merged, changed = apply_custom_questions_to_bank(result.interview_questions, jd.custom_questions)
+        if not changed:
+            continue
+        result.interview_questions = merged
+        db.add(result)
+        synced += 1
+    return synced
+
+
+@jd_router.put("/{jd_id}/custom-questions")
+def hr_update_jd_custom_questions(
+    jd_id: int,
+    payload: HrJDCustomQuestionsBody,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    jd = _get_hr_owned_jd_or_404(db, jd_id, current_user.user_id)
+    jd.custom_questions = normalize_custom_question_texts(payload.questions)
+    synced_results = _sync_open_result_question_banks_for_jd(db, jd)
+    db.add(jd)
+    db.commit()
+    db.refresh(jd)
+    return {
+        "ok": True,
+        "jd": _serialize_jd(jd),
+        "custom_questions": normalize_custom_question_texts(jd.custom_questions),
+        "synced_results": synced_results,
+    }
 
 
 # NOTE: Backward-safe minimal toggle for demo readiness.

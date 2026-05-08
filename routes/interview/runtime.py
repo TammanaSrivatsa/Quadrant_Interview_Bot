@@ -58,6 +58,8 @@ from routes.dependencies import SessionUser, require_role
 
 from services.pipeline import record_stage_change
 
+from services.question_customization import apply_custom_questions_to_bank
+
 from services.scoring import build_application_score, evaluate_answer, summarize_interview
 
 from routes.schemas import InterviewAnswerBody, InterviewEventBody, InterviewStartBody
@@ -961,25 +963,14 @@ def _ensure_question_bank(
 
 
 
-    # -- Prepend HR-mandated custom questions first --
-
-    _cq = list(getattr(job, 'custom_questions', None) or [])
-
-    if _cq:
-
-        _exist = {str(q.get('text') or '').lower().strip() for q in questions}
-
-        _add = [{'text': t.strip(), 'category': 'mandatory', 'type': 'mandatory'} for t in _cq if isinstance(t, str) and t.strip() and t.strip().lower() not in _exist]
-
-        if _add:
-
-            questions = _add + questions
-
-            result.interview_questions = questions
-
-            db.add(result)
-
-            db.commit()
+    questions, custom_changed = apply_custom_questions_to_bank(
+        questions,
+        getattr(job, "custom_questions", None) if job else None,
+    )
+    if custom_changed:
+        result.interview_questions = questions
+        db.add(result)
+        db.commit()
 
 
 
@@ -1530,12 +1521,20 @@ def start_interview(
 
     _ensure_interview_ready(result)
 
+    job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
+    question_count = int(job.question_count or 8) if job else 8
+    _ensure_question_bank(
+        db,
+        result=result,
+        candidate=candidate,
+        job=job,
+        question_count=question_count,
+    )
+
     active_session = _latest_interview_session(db, result)
     if active_session and active_session.status == "in_progress":
         session = active_session
     else:
-        job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
-        question_count = int(job.question_count or 8) if job else 8
         duration_minutes = int(job.total_duration_minutes or 30) if job else 30
         per_question_seconds = (duration_minutes * 60) // question_count
         total_time_seconds = duration_minutes * 60
@@ -1558,23 +1557,6 @@ def start_interview(
         db.flush()
 
     _ensure_session_questions(db, session=session, result=result)
-
-    if not result.interview_questions:
-        from services.question_generation import build_question_bundle
-        job = db.query(JobDescription).filter(JobDescription.id == result.job_id).first()
-        candidate = db.query(Candidate).filter(Candidate.id == result.candidate_id).first()
-        question_count = int(job.question_count or 8) if job else 8
-        bundle = build_question_bundle(
-            resume_text=candidate.resume_text or "",
-            jd_text=job.jd_text or "",
-            jd_dict=job.jd_dict_json or {},
-            job_title=job.title or "",
-            project_ratio=float(job.project_question_ratio or 0.8),
-            question_count=question_count,
-        )
-        result.interview_questions = bundle.get("questions") or []
-        db.commit()
-        _ensure_session_questions(db, session=session, result=result)
 
     next_question = _create_next_question(db, session, result, "")
     answered_count = db.query(InterviewAnswer).filter(

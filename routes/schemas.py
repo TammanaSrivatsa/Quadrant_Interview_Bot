@@ -97,6 +97,11 @@ class HrJDUpdateBody(BaseModel):
     project_question_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     total_duration_minutes: int | None = Field(default=None, ge=5, le=120)
     score_weights_json: dict[str, float] | None = Field(default=None, description="Custom weights for final score calculation")
+    custom_questions: list[str] | None = Field(default=None, max_length=50)
+
+
+class HrJDCustomQuestionsBody(BaseModel):
+    questions: list[str] = Field(default_factory=list, max_length=50)
 
 
 class CandidateSelectJDBody(BaseModel):
