@@ -167,7 +167,17 @@ def _hr_review_from_result(result: Result) -> dict:
 
 # ── list interviews ───────────────────────────────────────────────────────────
 
-@router.get("/interviews")
+def _recording_url(session: InterviewSession) -> str | None:
+    path = getattr(session, "recording_path", None)
+    if not path:
+        return None
+    value = str(path)
+    if value.startswith(("http://", "https://")):
+        return value
+    return f"/uploads/{value.lstrip('/')}"
+
+
+@router.get("/interviews")
 def list_interviews(
     current_user: SessionUser = Depends(require_role("hr")),
     db: Session = Depends(get_db),
@@ -220,7 +230,8 @@ def list_interviews(
                 "events_count": count_map.get(session.id, {}).get("events_count", 0),
                 "suspicious_events_count": count_map.get(session.id, {}).get("suspicious_count", 0),
                 # FIX: expose LLM eval status so the frontend can show "Pending / Scored"
-                "llm_eval_status": session.llm_eval_status or "pending",
+                "llm_eval_status": session.llm_eval_status or "pending",
+                "recording_available": bool(session.recording_path),
             }
         )
     return {"ok": True, "interviews": payload}
@@ -389,6 +400,14 @@ def interview_detail(
             "ended_at": session.ended_at,
             "llm_eval_status": session.llm_eval_status or "pending",
             "evaluation_summary": evaluation_summary,
+
+            "recording_url": _recording_url(session),
+
+            "recording_mime_type": session.recording_mime_type,
+
+            "recording_size_bytes": session.recording_size_bytes,
+
+            "recording_uploaded_at": session.recording_uploaded_at,
         },
         "questions": questions_payload,
         "events": [

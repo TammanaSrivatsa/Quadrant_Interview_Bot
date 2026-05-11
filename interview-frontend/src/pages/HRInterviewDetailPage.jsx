@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, XCircle, AlertTriangle, Camera, Clock, RefreshCw, Sparkles, Download } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Camera, Clock, RefreshCw, Sparkles, Download, Video } from "lucide-react";
 import MetricCard from "../components/MetricCard";
 import PageHeader from "../components/PageHeader";
 import StatusBadge from "../components/StatusBadge";
@@ -412,6 +412,31 @@ export default function HRInterviewDetailPage() {
       </div>
 
       {Object.keys(section_summary || {}).length > 0 && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{Object.entries(section_summary).map(([section, score]) => <MetricCard key={section} label={`${section} section`} value={`${Math.round(Number(score))}%`} hint="Average score" color="purple" />)}</div>}
+
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+          <Video className="text-blue-600" size={20} />
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Interview Recording</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{interview.recording_uploaded_at ? `Uploaded ${formatDateTime(interview.recording_uploaded_at)}` : "Full candidate session video"}</p>
+          </div>
+        </div>
+        <div className="p-6">
+          {interview.recording_url ? (
+            <video
+              src={makeFullUrl(interview.recording_url)}
+              controls
+              preload="metadata"
+              className="w-full max-h-[560px] rounded-2xl bg-slate-950 border border-slate-200 dark:border-slate-800"
+            />
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8 text-center text-slate-500 dark:text-slate-400">
+              <Video size={28} className="mx-auto mb-3 opacity-60" />
+              <p className="text-sm font-bold">No recording uploaded for this interview.</p>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">

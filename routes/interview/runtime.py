@@ -15,6 +15,7 @@ import os
 import re
 
 import time
+import uuid
 
 from datetime import datetime, timedelta
 
@@ -111,6 +112,12 @@ def _transcribe_cache_set(key: str, payload: dict[str, Any]) -> None:
 PROCTOR_UPLOAD_ROOT = Path("uploads") / "proctoring"
 
 PROCTOR_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
+RECORDING_UPLOAD_ROOT = config.UPLOAD_DIR / "interview_recordings"
+
+RECORDING_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
+INTERVIEW_RECORDING_MAX_MB = int(os.getenv("INTERVIEW_RECORDING_MAX_MB", "200"))
 
 
 
@@ -1643,6 +1650,79 @@ def submit_interview_answer(
     response = _compose_start_response(session, next_question, answered_count)
     response["next_question"] = _serialize_question(next_question)
     return response
+
+
+@router.post("/interview/{session_id}/recording")
+def upload_interview_recording(
+    session_id: int,
+    recording: UploadFile = File(...),
+    duration_seconds: int | None = Form(None),
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Persist the candidate's full interview recording for HR review."""
+    session = db.query(InterviewSession).filter(
+        InterviewSession.id == session_id,
+        InterviewSession.candidate_id == current_user.user_id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    raw = recording.file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Recording payload is empty")
+
+    max_size_bytes = INTERVIEW_RECORDING_MAX_MB * 1_000_000
+    if len(raw) > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"Recording file exceeds {INTERVIEW_RECORDING_MAX_MB}MB limit")
+
+    content_type = (recording.content_type or "").lower()
+    allowed_types = {
+        "video/webm": "webm",
+        "video/mp4": "mp4",
+        "video/ogg": "ogv",
+        "audio/webm": "webm",
+        "audio/mp4": "mp4",
+    }
+    ext = allowed_types.get(content_type)
+    if not ext:
+        filename = (recording.filename or "").lower()
+        ext = "mp4" if filename.endswith(".mp4") else "webm"
+
+    filename = f"session_{session.id}_{uuid.uuid4().hex}.{ext}"
+    file_path = RECORDING_UPLOAD_ROOT / filename
+    with file_path.open("wb") as handle:
+        handle.write(raw)
+
+    previous_path = session.recording_path
+    relative_path = f"interview_recordings/{filename}"
+    session.recording_path = relative_path
+    session.recording_mime_type = recording.content_type or f"video/{ext}"
+    session.recording_size_bytes = len(raw)
+    session.recording_uploaded_at = datetime.utcnow()
+
+    meta = session.evaluation_summary_json if isinstance(session.evaluation_summary_json, dict) else {}
+    if duration_seconds is not None:
+        meta = {**meta, "recording_duration_seconds": int(duration_seconds)}
+        session.evaluation_summary_json = meta
+
+    db.commit()
+
+    if previous_path and previous_path != relative_path and not previous_path.startswith(("http://", "https://")):
+        previous_file = config.UPLOAD_DIR / previous_path
+        try:
+            if previous_file.is_file() and previous_file.resolve().is_relative_to(config.UPLOAD_DIR.resolve()):
+                previous_file.unlink()
+        except Exception:
+            logger.warning("Unable to delete previous interview recording path=%s", previous_path)
+
+    return {
+        "ok": True,
+        "session_id": session.id,
+        "recording_url": f"/uploads/{relative_path}",
+        "recording_size_bytes": len(raw),
+        "recording_uploaded_at": utc_isoformat(session.recording_uploaded_at),
+    }
 
 
 @router.get("/interview/{result_id}/recheck")

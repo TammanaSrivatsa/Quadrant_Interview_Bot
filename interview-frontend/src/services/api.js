@@ -76,7 +76,7 @@ async function request(config) {
     console.log(`[API] Request data:`, JSON.stringify(config.data));
     const response = await apiClient({
       ...config,
-      timeout: API_TIMEOUT_MS,
+      timeout: config.timeout || API_TIMEOUT_MS,
     });
     console.log(`[API] Response status:`, response.status);
     console.log(`[API] Response headers content-type:`, response.headers["content-type"]);
@@ -353,6 +353,7 @@ export const interviewApi = {
   tts: (text, voice = "kajal") => request({ method: "post", url: "/interview/tts", data: { text, voice } }),
   submitAnswer: (payload) => request({ method: "post", url: "/interview/answer", data: payload }),
   transcribe: (formData) => request({ method: "post", url: "/interview/transcribe", data: formData }),
+  uploadRecording: (sessionId, formData) => request({ method: "post", url: `/interview/${sessionId}/recording`, data: formData, timeout: 300000 }),
   logEvent: (targetId, payload) => request({ method: "post", url: `/interview/${targetId}/event`, data: payload }),
   evaluate: (sessionId) => request({ method: "post", url: `/interview/${sessionId}/evaluate` }),
   sessionSummary: (sessionId) => request({ method: "get", url: `/interview/session/${sessionId}/summary` }),

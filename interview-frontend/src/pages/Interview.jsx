@@ -159,6 +159,39 @@ function getPreferredAudioMimeType() {
   return candidates.find((t) => window.MediaRecorder.isTypeSupported(t)) || "";
 }
 
+function getPreferredSessionRecordingMimeType() {
+  if (typeof window === "undefined" || !window.MediaRecorder) return "";
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+    "video/mp4",
+  ];
+  return candidates.find((t) => window.MediaRecorder.isTypeSupported(t)) || "";
+}
+
+function wrapCanvasText(ctx, text, maxWidth, maxLines = 6) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  });
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    const clipped = lines.slice(0, maxLines);
+    clipped[maxLines - 1] = `${clipped[maxLines - 1].replace(/\s+$/, "")}...`;
+    return clipped;
+  }
+  return lines.length ? lines : ["-"];
+}
+
 function TabSwitchAlert({ count }) {
   if (count === 0) return null;
   return (
@@ -217,6 +250,7 @@ export default function Interview() {
   const [previewWarning, setPreviewWarning] = useState("");
   const [answerFeedback, setAnswerFeedback] = useState(null);
   const [proctorAlert, setProctorAlert] = useState("");
+  const [screenRecordingStatus, setScreenRecordingStatus] = useState("composed");
   const [showFullscreenWarning, setShowFullscreenWarning] = useState(false);
 
 
@@ -264,9 +298,19 @@ export default function Interview() {
   const autoSubmittedRef = useRef(false);
   const baselineCapturedRef = useRef(false);
   const streamRef = useRef(null);
+  const displayStreamRef = useRef(null);
   const audioStreamRef = useRef(null);
   const recorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const sessionRecorderRef = useRef(null);
+  const sessionRecordingChunksRef = useRef([]);
+  const sessionRecordingStartedAtRef = useRef(null);
+  const sessionRecordingUploadedRef = useRef(false);
+  const sessionRecordingFrameRef = useRef(null);
+  const currentQuestionRef = useRef(null);
+  const answerRef = useRef("");
+  const questionNumberRef = useRef(questionNumber);
+  const maxQuestionsRef = useRef(maxQuestions);
   const answerStartTimeRef = useRef(null);
 
   // ── TTS ────────────────────────────────────────────────────────────────────
@@ -292,6 +336,11 @@ export default function Interview() {
         ? "Ready"
         : "Check access";
   const micStatusOk = isRecording || isTranscribing || micReady;
+
+  useEffect(() => { currentQuestionRef.current = currentQuestion; }, [currentQuestion]);
+  useEffect(() => { answerRef.current = answer; }, [answer]);
+  useEffect(() => { questionNumberRef.current = questionNumber; }, [questionNumber]);
+  useEffect(() => { maxQuestionsRef.current = maxQuestions; }, [maxQuestions]);
 
   // ── session load ───────────────────────────────────────────────────────────
   const loadSession = useCallback(async () => {
@@ -338,6 +387,7 @@ export default function Interview() {
       baselineCapturedRef.current = false;
       autoSubmittedRef.current = false;
       answerStartTimeRef.current = Date.now();
+      sessionRecordingUploadedRef.current = false;
 
       console.log("[Interview] State set complete!");
     } catch (e) {
@@ -352,6 +402,189 @@ export default function Interview() {
   const releaseAudioStream = useCallback(() => {
     if (audioStreamRef.current) { stopStreamTracks(audioStreamRef.current); audioStreamRef.current = null; }
   }, []);
+
+  const startSessionRecording = useCallback(() => {
+    if (!window.MediaRecorder || sessionRecorderRef.current || sessionRecordingUploadedRef.current) return;
+    if (!displayStreamRef.current && window.__interviewDisplayStream) {
+      displayStreamRef.current = window.__interviewDisplayStream;
+    }
+    const stream = streamRef.current;
+    const videoEl = videoRef.current;
+    const audioTracks = stream?.getAudioTracks?.().filter((track) => track.readyState === "live") || [];
+    const displayTracks = displayStreamRef.current?.getVideoTracks?.().filter((track) => track.readyState === "live") || [];
+    if (!videoEl && !audioTracks.length && !displayTracks.length) return;
+    try {
+      let recordingStream;
+      if (displayTracks.length) {
+        recordingStream = new MediaStream(displayTracks);
+        displayTracks[0].onended = () => setScreenRecordingStatus("screen-stopped");
+        setScreenRecordingStatus("screen");
+      } else {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        const draw = () => {
+          ctx.fillStyle = "#07111f";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(32, 32, 728, 656);
+          ctx.fillStyle = "#111827";
+          ctx.fillRect(792, 32, 456, 656);
+
+          if (videoEl?.readyState >= 2 && videoEl.videoWidth > 0) {
+            const boxX = 812;
+            const boxY = 52;
+            const boxW = 416;
+            const boxH = 312;
+            const scale = Math.max(boxW / videoEl.videoWidth, boxH / videoEl.videoHeight);
+            const drawW = videoEl.videoWidth * scale;
+            const drawH = videoEl.videoHeight * scale;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(boxX, boxY, boxW, boxH);
+            ctx.clip();
+            ctx.translate(boxX + boxW, boxY);
+            ctx.scale(-1, 1);
+            ctx.drawImage(videoEl, (boxW - drawW) / 2, (boxH - drawH) / 2, drawW, drawH);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = "#020617";
+            ctx.fillRect(812, 52, 416, 312);
+            ctx.fillStyle = "#94a3b8";
+            ctx.font = "700 24px Inter, Arial, sans-serif";
+            ctx.fillText("Camera preview unavailable", 872, 214);
+          }
+
+          const q = currentQuestionRef.current || {};
+          const qNo = questionNumberRef.current || 1;
+          const max = maxQuestionsRef.current || 1;
+          const answerText = answerRef.current || "Candidate answer transcript will appear here as speech is transcribed.";
+
+          ctx.fillStyle = "#60a5fa";
+          ctx.font = "800 22px Inter, Arial, sans-serif";
+          ctx.fillText(`Question ${qNo} of ${max}`, 64, 82);
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "800 34px Inter, Arial, sans-serif";
+          wrapCanvasText(ctx, q.text || "Interview question", 648, 7).forEach((line, index) => {
+            ctx.fillText(line, 64, 136 + index * 44);
+          });
+
+          ctx.fillStyle = "#93c5fd";
+          ctx.font = "800 22px Inter, Arial, sans-serif";
+          ctx.fillText("Candidate Answer", 64, 444);
+          ctx.fillStyle = "#dbeafe";
+          ctx.font = "500 25px Inter, Arial, sans-serif";
+          wrapCanvasText(ctx, answerText, 648, 7).forEach((line, index) => {
+            ctx.fillText(line, 64, 492 + index * 34);
+          });
+
+          ctx.fillStyle = "#e2e8f0";
+          ctx.font = "800 24px Inter, Arial, sans-serif";
+          ctx.fillText("Candidate Camera", 812, 410);
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "600 20px Inter, Arial, sans-serif";
+          wrapCanvasText(ctx, "Microphone audio is included in this recording. Full evaluated answers are listed below in HR review.", 380, 5)
+            .forEach((line, index) => ctx.fillText(line, 812, 454 + index * 30));
+
+          ctx.fillStyle = "#ef4444";
+          ctx.beginPath();
+          ctx.arc(816, 650, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#f8fafc";
+          ctx.font = "800 18px Inter, Arial, sans-serif";
+          ctx.fillText("REC", 834, 656);
+
+          sessionRecordingFrameRef.current = window.requestAnimationFrame(draw);
+        };
+        draw();
+        recordingStream = canvas.captureStream(12);
+        setScreenRecordingStatus("composed");
+      }
+      audioTracks.forEach((track) => recordingStream.addTrack(track));
+      const mimeType = getPreferredSessionRecordingMimeType();
+      const recorder = mimeType
+        ? new window.MediaRecorder(recordingStream, { mimeType })
+        : new window.MediaRecorder(recordingStream);
+      sessionRecordingChunksRef.current = [];
+      sessionRecordingStartedAtRef.current = Date.now();
+      recorder.ondataavailable = (ev) => {
+        if (ev.data?.size > 0) sessionRecordingChunksRef.current.push(ev.data);
+      };
+      recorder.onerror = () => {
+        sessionRecorderRef.current = null;
+        setPreviewWarning("Interview recording failed. HR can still review answers and proctoring snapshots.");
+      };
+      recorder.start(5000);
+      sessionRecorderRef.current = recorder;
+    } catch {
+      setPreviewWarning("Interview recording is unavailable in this browser. HR can still review answers and proctoring snapshots.");
+    }
+  }, []);
+
+  const stopSessionRecordingAndUpload = useCallback(async () => {
+    if (!sessionId || sessionRecordingUploadedRef.current) return;
+    const recorder = sessionRecorderRef.current;
+    const uploadChunks = async (mimeType) => {
+      if (sessionRecordingFrameRef.current) {
+        window.cancelAnimationFrame(sessionRecordingFrameRef.current);
+        sessionRecordingFrameRef.current = null;
+      }
+      const chunks = sessionRecordingChunksRef.current;
+      sessionRecordingChunksRef.current = [];
+      sessionRecorderRef.current = null;
+      if (!chunks.length) return;
+      const resolvedMimeType = mimeType || getPreferredSessionRecordingMimeType() || "video/webm";
+      const blob = new Blob(chunks, { type: resolvedMimeType });
+      if (!blob.size) return;
+      const ext = resolvedMimeType.includes("mp4") ? "mp4" : "webm";
+      const fd = new FormData();
+      fd.append("recording", blob, `interview-session.${ext}`);
+      if (sessionRecordingStartedAtRef.current) {
+        fd.append("duration_seconds", String(Math.round((Date.now() - sessionRecordingStartedAtRef.current) / 1000)));
+      }
+      await interviewApi.uploadRecording(sessionId, fd);
+      sessionRecordingUploadedRef.current = true;
+      if (displayStreamRef.current) {
+        stopStreamTracks(displayStreamRef.current);
+        if (window.__interviewDisplayStream === displayStreamRef.current) window.__interviewDisplayStream = null;
+        displayStreamRef.current = null;
+      }
+    };
+
+    if (!recorder) {
+      await uploadChunks(getPreferredSessionRecordingMimeType());
+      return;
+    }
+
+    if (recorder.state === "inactive") {
+      await uploadChunks(recorder.mimeType);
+      return;
+    }
+
+    await new Promise((resolve) => {
+      recorder.onstop = async () => {
+        try {
+          await uploadChunks(recorder.mimeType);
+        } catch (err) {
+          console.warn("Interview recording upload failed:", err);
+          setPreviewWarning("Interview recording could not be uploaded. HR can still review answers and proctoring snapshots.");
+        } finally {
+          resolve();
+        }
+      };
+      try {
+        recorder.requestData?.();
+        recorder.stop();
+      } catch {
+        resolve();
+      }
+    });
+  }, [sessionId]);
 
   useEffect(() => { loadSession(); }, [loadSession]);
 
@@ -450,13 +683,33 @@ export default function Interview() {
         if (rec.state !== "inactive") rec.stop();
         recorderRef.current = null;
       }
+      const sessionRec = sessionRecorderRef.current;
+      if (sessionRec) {
+        sessionRec.ondataavailable = null; sessionRec.onerror = null; sessionRec.onstop = null;
+        if (sessionRec.state !== "inactive") sessionRec.stop();
+        sessionRecorderRef.current = null;
+      }
+      if (sessionRecordingFrameRef.current) {
+        window.cancelAnimationFrame(sessionRecordingFrameRef.current);
+        sessionRecordingFrameRef.current = null;
+      }
       releaseAudioStream();
+      if (displayStreamRef.current) {
+        stopStreamTracks(displayStreamRef.current);
+        if (window.__interviewDisplayStream === displayStreamRef.current) window.__interviewDisplayStream = null;
+        displayStreamRef.current = null;
+      }
       if (streamRef.current) { stopStreamTracks(streamRef.current); streamRef.current = null; }
       if (cleanupVideoEl) cleanupVideoEl.srcObject = null;
     };
   }, [releaseAudioStream]);
 
   // ── global timer ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!sessionId || !previewReady) return;
+    startSessionRecording();
+  }, [sessionId, previewReady, startSessionRecording]);
+
   useEffect(() => {
     if (!currentQuestion || loading || isSubmitting || answerFeedback) return;
     const id = setInterval(() => {
@@ -466,7 +719,7 @@ export default function Interview() {
   }, [currentQuestion, isSubmitting, loading, answerFeedback]);
 
   // ── advance after answer ───────────────────────────────────────────────────
-  const _advanceAfterAnswer = useCallback((response) => {
+  const _advanceAfterAnswer = useCallback(async (response) => {
     stopSpeaking();
     console.log("[Interview] _advanceAfterAnswer called", {
       interview_completed: response.interview_completed,
@@ -476,6 +729,11 @@ export default function Interview() {
       max_questions: response.max_questions,
     });
     if (response.interview_completed || !response.next_question) {
+      try {
+        await stopSessionRecordingAndUpload();
+      } catch (err) {
+        console.warn("Interview recording upload failed:", err);
+      }
       navigate(`/interview/${resultId}/completed`);
       return;
     }
@@ -500,7 +758,7 @@ export default function Interview() {
     autoSubmittedRef.current = false;
     answerStartTimeRef.current = Date.now();
     setAnswerFeedback(null);
-  }, [navigate, resultId, stopSpeaking]);
+  }, [navigate, resultId, stopSpeaking, stopSessionRecordingAndUpload]);
 
   // ── submit answer ──────────────────────────────────────────────────────────
     const submitAnswer = useCallback(async ({ skipCurrent = false, answerOverride } = {}) => {
@@ -527,7 +785,7 @@ export default function Interview() {
 
       // NOTE: Backend does not return 'feedback' on submitAnswer.
       // Answer feedback is available via /interview/session/{id}/summary after completion.
-      _advanceAfterAnswer(response);
+      await _advanceAfterAnswer(response);
     } catch (e) {
       // FIX I1: If the question was already answered (double-submit or race condition),
       // treat it as success and reload session to get the next unanswered question.
@@ -731,10 +989,17 @@ export default function Interview() {
           {error && <p className="alert error">{error}</p>}
           <TabSwitchAlert count={tabSwitchCount} />
           <div className="rounded-3xl border border-slate-800 bg-slate-900/80 px-5 py-4 text-sm text-slate-300 shadow-lg">
-            <p className="font-bold text-white">Interview setup</p>
-            <p className="mt-1 leading-relaxed">
-              Keep camera and microphone access enabled, answer in your own words, and use the recording button when speaking feels easier.
-            </p>
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className="font-bold text-white">Interview setup</p>
+                <p className="mt-1 leading-relaxed">
+                  Keep camera and microphone access enabled, answer in your own words, and use the recording button when speaking feels easier. This session is recorded for HR review.
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Recording mode: {screenRecordingStatus === "screen" ? "Full screen" : "Q&A review layout"}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Progress + timers + mute toggle */}

@@ -174,6 +174,10 @@ class InterviewSession(Base):
     # values: pending | running | completed | failed
     # NOTE: Interview-level ATS summary for completed page and HR review.
     evaluation_summary_json = Column(JSON, nullable=True)
+    recording_path = Column(String(500), nullable=True)
+    recording_mime_type = Column(String(120), nullable=True)
+    recording_size_bytes = Column(Integer, nullable=True)
+    recording_uploaded_at = Column(DateTime, nullable=True)
 
     candidate = relationship("Candidate", back_populates="interviews")
     result = relationship("Result", back_populates="sessions")

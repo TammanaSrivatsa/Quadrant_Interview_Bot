@@ -172,6 +172,20 @@ def _run_migrations():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_preferences_id ON user_preferences (id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_preferences_user_id ON user_preferences (user_id)"))
             logger.info("Created user_preferences table")
+        if "interview_sessions" in inspector.get_table_names():
+            cols = [c["name"] for c in inspector.get_columns("interview_sessions")]
+            if "recording_path" not in cols:
+                conn.execute(text("ALTER TABLE interview_sessions ADD COLUMN recording_path VARCHAR(500)"))
+                logger.info("Added recording_path to interview_sessions")
+            if "recording_mime_type" not in cols:
+                conn.execute(text("ALTER TABLE interview_sessions ADD COLUMN recording_mime_type VARCHAR(120)"))
+                logger.info("Added recording_mime_type to interview_sessions")
+            if "recording_size_bytes" not in cols:
+                conn.execute(text("ALTER TABLE interview_sessions ADD COLUMN recording_size_bytes INTEGER"))
+                logger.info("Added recording_size_bytes to interview_sessions")
+            if "recording_uploaded_at" not in cols:
+                conn.execute(text("ALTER TABLE interview_sessions ADD COLUMN recording_uploaded_at TIMESTAMP"))
+                logger.info("Added recording_uploaded_at to interview_sessions")
 
 
 _run_migrations()

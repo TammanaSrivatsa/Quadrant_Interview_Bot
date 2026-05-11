@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useId } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Camera, Mic, Wifi, CheckCircle2, AlertCircle, Play,
-  ShieldCheck, Video, Settings, AlertTriangle, Lock, Mail, Volume2, AlertOctagon
+  ShieldCheck, Video, Settings, AlertTriangle, Lock, Mail, Volume2, AlertOctagon, MonitorUp
 } from "lucide-react";
 import { interviewApi } from "../services/api";
 import { useAuth } from "../context/useAuth";
@@ -232,10 +232,12 @@ export default function PreCheck() {
   const { user, loading: authLoading } = useAuth();
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const displayStreamRef = useRef(null);
 
   const [checks, setChecks] = useState({
     camera: { status: "pending", label: "Camera access" },
     mic: { status: "pending", label: "Microphone access" },
+    screen: { status: "pending", label: "Full screen recording" },
     internet: { status: "granted", label: "Internet connection" },
     voiceRecorder: { status: "pending", label: "Voice recording support" },
   });
@@ -273,6 +275,64 @@ export default function PreCheck() {
       if (videoElement) videoElement.srcObject = null;
     };
   }, []);
+
+  async function requestFullScreenRecording() {
+    setError("");
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setChecks((prev) => ({
+        ...prev,
+        screen: {
+          status: "denied",
+          label: "Full screen recording",
+          detail: "Screen recording is not supported in this browser. Use Chrome or Edge.",
+        },
+      }));
+      announce("Full screen recording is not supported in this browser.", "assertive");
+      return;
+    }
+
+    try {
+      displayStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 15 },
+        audio: false,
+      });
+      displayStreamRef.current = displayStream;
+      window.__interviewDisplayStream = displayStream;
+      sessionStorage.setItem(`interview-screen-recording:${resultId}`, "granted");
+      const [track] = displayStream.getVideoTracks();
+      if (track) {
+        track.onended = () => {
+          if (window.__interviewDisplayStream === displayStream) window.__interviewDisplayStream = null;
+          sessionStorage.removeItem(`interview-screen-recording:${resultId}`);
+          setChecks((prev) => ({
+            ...prev,
+            screen: {
+              status: "denied",
+              label: "Full screen recording",
+              detail: "Screen sharing was stopped. Enable it again before starting.",
+            },
+          }));
+        };
+      }
+      setChecks((prev) => ({
+        ...prev,
+        screen: { status: "granted", label: "Full screen recording", detail: "Enabled for this interview." },
+      }));
+      announce("Full screen recording enabled.", "assertive");
+    } catch {
+      sessionStorage.removeItem(`interview-screen-recording:${resultId}`);
+      setChecks((prev) => ({
+        ...prev,
+        screen: {
+          status: "denied",
+          label: "Full screen recording",
+          detail: "Permission was not granted. Please enable it to start the interview.",
+        },
+      }));
+      announce("Full screen recording permission was not granted.", "assertive");
+    }
+  }
 
   if (authLoading) {
     return (
@@ -316,6 +376,7 @@ export default function PreCheck() {
       setChecks({
         camera: { status: "granted", label: "Camera access" },
         mic: { status: micGranted ? "granted" : "denied", label: "Microphone access" },
+        screen: checks.screen,
         internet: { status: "granted", label: "Internet connection" },
         voiceRecorder: {
           status: recorderCheck.supported ? "granted" : "denied",
@@ -406,6 +467,7 @@ export default function PreCheck() {
   }
 
   const cameraGranted = checks.camera.status === "granted";
+  const screenGranted = checks.screen.status === "granted";
   const voiceUnsupported = checks.voiceRecorder.status === "denied" && checks.voiceRecorder.detail;
   const allGranted = Object.values(checks).every((c) => c.status === "granted");
 
@@ -477,8 +539,36 @@ export default function PreCheck() {
           <div role="list" aria-label="System requirements" className="space-y-4">
             <SystemCheckItem label="Camera access" status={checks.camera.status} icon={Camera} />
             <SystemCheckItem label="Microphone access" status={checks.mic.status} icon={Mic} />
+            <SystemCheckItem label="Full screen recording" status={checks.screen.status} detail={checks.screen.detail} icon={MonitorUp} />
             <SystemCheckItem label="Internet connection" status={checks.internet.status} icon={Wifi} />
             <SystemCheckItem label="Voice recording support" status={checks.voiceRecorder.status} detail={checks.voiceRecorder.detail} icon={Mic} />
+          </div>
+
+          <div className="rounded-3xl border border-blue-100 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/20 p-5 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                <MonitorUp size={20} className="text-blue-600 dark:text-blue-300" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="font-bold text-blue-900 dark:text-blue-200">Enable full screen recording</p>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  Select your interview tab or entire screen when the browser prompt opens. This must stay enabled during the interview.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={requestFullScreenRecording}
+              className={cn(
+                "w-full py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all",
+                screenGranted
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-blue-600 hover:bg-blue-700 text-white"
+              )}
+            >
+              {screenGranted ? <CheckCircle2 size={18} aria-hidden="true" /> : <MonitorUp size={18} aria-hidden="true" />}
+              <span>{screenGranted ? "Full Screen Recording Enabled" : "Enable Full Screen Recording"}</span>
+            </button>
           </div>
 
           <fieldset className="space-y-3">
@@ -558,16 +648,16 @@ export default function PreCheck() {
 
             <button
               type="button"
-              disabled={!cameraGranted || starting}
+              disabled={!cameraGranted || !screenGranted || starting}
               onClick={handleStartInterview}
               aria-busy={starting}
               className={cn(
                 "flex-[1.5] py-4 rounded-2xl font-black flex items-center justify-center space-x-2 transition-all shadow-xl",
-                cameraGranted
+                cameraGranted && screenGranted
                   ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 dark:shadow-none"
                   : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
               )}
-              title={!cameraGranted ? "Camera access required to start interview" : ""}
+              title={!cameraGranted ? "Camera access required to start interview" : !screenGranted ? "Full screen recording must be enabled before starting" : ""}
             >
               <span>{starting ? "Starting..." : "Start Interview"}</span>
               <Play size={18} fill="currentColor" aria-hidden="true" />
@@ -583,6 +673,12 @@ export default function PreCheck() {
           {!cameraGranted && (
             <p className="text-xs text-red-500 dark:text-red-400 text-center">
               Camera access required. Please allow camera access to continue.
+            </p>
+          )}
+
+          {cameraGranted && !screenGranted && (
+            <p className="text-xs text-red-500 dark:text-red-400 text-center">
+              Full screen recording must be enabled before starting the interview.
             </p>
           )}
         </div>
