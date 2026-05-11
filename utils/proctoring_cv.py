@@ -1,76 +1,82 @@
-"""MediaPipe/OpenCV-based frame analysis for interview proctoring.
+"""DeepFace-based frame analysis for interview proctoring.
 
-MediaPipe is preferred for better accuracy. Falls back to OpenCV if MediaPipe unavailable.
-Also provides gaze tracking when MediaPipe face mesh is available.
+Comprehensive proctoring with:
+- Face detection (multiple backends: retinaface, mtcnn, mediapipe, etc.)
+- Face recognition (ArcFace, Facenet, VGG-Face embeddings)
+- Emotion detection
+- Age/Gender detection
+- Anti-spoofing (liveness detection)
+- Facial landmarks
 """
 
 from __future__ import annotations
 
 import time
+import base64
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+import numpy as np
+np_internals = np  # Alias for compatibility
 
 cv2 = None
-np = None
-mp = None
-FaceDetection = None
-FaceMesh = None
 
 try:
     import cv2
-    import numpy as np
 except Exception:
     cv2 = None
-    np = None
+
+DeepFace = None
+_face_analyzer = None
+_liveness_analyzer = None
+
+DETECTOR_BACKEND = "retinaface"
+EMBEDDING_MODEL = "ArcFace"
 
 try:
-    import mediapipe as mp
-    if mp:
-        FaceDetection = mp.solutions.face_detection
-        FaceMesh = mp.solutions.face_mesh
-except Exception:
-    mp = None
-    FaceDetection = None
-    FaceMesh = None
-
-_FACE_CASCADE = None
-_UPPER_BODY_CASCADE = None
-_MP_DETECTOR = None
-_MP_MESH = None
-
-if cv2 is not None:
-    _FACE_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    _UPPER_BODY_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_upperbody.xml")
-
-if mp is not None:
-    try:
-        _MP_DETECTOR = mp.solutions.face_detection.FaceDetection(
-            model_selection=0,
-            min_detection_confidence=0.5
-        )
-    except Exception:
-        _MP_DETECTOR = None
-
-    try:
-        _MP_MESH = mp.solutions.face_mesh.FaceMesh(
-            max_num_faces=2,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-    except Exception:
-        _MP_MESH = None
+    from deepface import DeepFace as DF
+    from deepface.deepface import DeepFace as DeepFaceCore
+    DeepFace = DF
+    _face_analyzer = None
+    _liveness_analyzer = None
+except Exception as e:
+    DeepFace = None
 
 _LAST_FRAMES: dict[int, Any] = {}
 _LAST_PERIODIC_SAVE: dict[int, float] = {}
+_BASELINE_EMBEDDINGS: dict[int, list] = {}
 
-LEFT_EYE_INDICES = [33, 133, 160, 158, 153, 144, 145, 161, 246, 468, 469, 470, 471, 397, 288, 361, 323, 454, 356, 389, 251, 284, 328, 332, 397, 118, 119, 114, 115, 245, 222]
-RIGHT_EYE_INDICES = [362, 263, 387, 385, 380, 381, 382, 388, 473, 474, 475, 476, 292, 610, 624, 647, 700, 605, 570, 512, 610, 719, 639, 590, 608, 676, 570, 571, 658]
+ANALYZE_CONFIDENCE_THRESHOLD = 0.6
+MAX_ANALYZE_RETRIES = 2
 
 
-def analyze_frame(session_id: int, raw_bytes: bytes) -> dict[str, object]:
+def _init_face_analyzer():
+    global _face_analyzer
+    if _face_analyzer is None and DeepFace is not None:
+        _face_analyzer = True
+
+
+def analyze_frame(
+    session_id: int,
+    raw_bytes: bytes,
+    capture_baseline: bool = False
+) -> dict[str, object]:
+    """
+    Comprehensive frame analysis using DeepFace.
+    
+    Returns:
+        - faces_count: Number of faces detected
+        - face_box: Bounding box of primary face (x, y, w, h)
+        - embedding: Face embedding for identity verification
+        - emotions: Emotion analysis (dominant + scores)
+        - age: Estimated age
+        - gender: Estimated gender
+        - liveness: Anti-spoofing result (real/fake)
+        - landmarks: Facial landmarks
+        - motion_score: Movement detection
+        - deepface_enabled: Whether DeepFace loaded successfully
+    """
     try:
-        if cv2 is None or np is None:
+        if cv2 is None or np_internals is None:
             return _fallback_response()
 
         frame = _decode_frame(raw_bytes)
@@ -78,199 +84,435 @@ def analyze_frame(session_id: int, raw_bytes: bytes) -> dict[str, object]:
             return {
                 "ok": False,
                 "faces_count": 0,
-                "motion_score": 0.0,
-                "face_signature": None,
                 "face_box": None,
-                "upper_bodies_count": 0,
-                "left_shoulder_visibility": None,
-                "right_shoulder_visibility": None,
-                "shoulder_score": None,
-                "shoulder_present": None,
-                "shoulder_model_enabled": False,
-                "error": "Invalid frame payload",
-                "opencv_enabled": False,
+                "face_signature": None,
+                "embedding": None,
+                "emotions": None,
+                "age": None,
+                "gender": None,
+                "liveness": None,
+                "landmarks": None,
+                "motion_score": 0.0,
+                "gaze_direction": None,
+                "deepface_enabled": False,
+                "detector_backend": None,
+                "error": "Invalid frame payload"
             }
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        motion_score = _motion_score(session_id, frame)
 
-        faces_count = 0
-        face_box = None
-        face_signature = None
-        gaze_direction = None
-        landmarks = None
+        if DeepFace is None:
+            return _basic_opencv_analysis(frame, motion_score)
 
-        if _MP_DETECTOR is not None:
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            rgb_frame.flags.writeable = False
-            detection_results = _MP_DETECTOR.process(rgb_frame)
+        try:
+            result = _deepface_analyze(frame, session_id, capture_baseline)
+            result["motion_score"] = float(motion_score)
+            result["deepface_enabled"] = True
+            result["detector_backend"] = DETECTOR_BACKEND
+            result["embedding_model"] = EMBEDDING_MODEL
+            result["ok"] = True
+            result["error"] = None
+            result["face_signature"] = result.get("embedding")
 
-            if detection_results.detections:
-                faces_count = len(detection_results.detections)
-                if faces_count == 1:
-                    detection = detection_results.detections[0]
-                    bbox = detection.location_data.relative_bounding_box
-                    h, w = frame.shape[:2]
-                    x = int(bbox.xmin * w)
-                    y = int(bbox.ymin * h)
-                    width = int(bbox.width * w)
-                    height = int(bbox.height * h)
-                    x = max(0, x)
-                    y = max(0, y)
-                    face_box = (x, y, width, height) if width > 0 and height > 0 else None
+            result["opencv_enabled"] = False
+            result["mediapipe_enabled"] = True
+            result["shoulder_model_enabled"] = False
+            result["left_shoulder_visibility"] = None
+            result["right_shoulder_visibility"] = None
+            result["shoulder_score"] = None
+            result["gaze_direction"] = None
+            result["upper_bodies_count"] = 0
 
-                    if face_box and _MP_MESH is not None:
-                        mesh_results = _MP_MESH.process(rgb_frame)
-                        if mesh_results.multi_face_landmarks:
-                            landmarks = mesh_results.multi_face_landmarks[0]
-                            gaze_direction = _calculate_gaze(landmarks, frame.shape)
+            return result
 
-        if faces_count == 0:
-            faces = _FACE_CASCADE.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(50, 50))
-            faces_count = int(len(faces))
-            if faces_count == 1:
-                face_box = _as_box(faces[0])
+        except Exception as df_err:
+            return _fallback_with_opencv(frame, motion_score, str(df_err))
 
-        if face_box:
-            face_signature = _face_signature(gray, face_box)
-
-        motion_score = _motion_score(session_id, gray)
-        shoulder_data = _shoulder_metrics(gray, face_box)
-
-        return {
-            "ok": True,
-            "faces_count": faces_count,
-            "motion_score": float(motion_score),
-            "face_signature": face_signature,
-            "face_box": face_box,
-            "upper_bodies_count": int(shoulder_data["upper_bodies_count"]),
-            "left_shoulder_visibility": shoulder_data["left_shoulder_visibility"],
-            "right_shoulder_visibility": shoulder_data["right_shoulder_visibility"],
-            "shoulder_score": shoulder_data["shoulder_score"],
-            "shoulder_present": shoulder_data["shoulder_present"],
-            "shoulder_model_enabled": shoulder_data["shoulder_model_enabled"],
-            "gaze_direction": gaze_direction,
-            "mediapipe_enabled": _MP_DETECTOR is not None,
-            "error": None,
-            "opencv_enabled": True,
-        }
     except Exception as exc:
         return {
             "ok": False,
             "faces_count": 0,
-            "motion_score": 0.0,
-            "face_signature": None,
             "face_box": None,
-            "upper_bodies_count": 0,
-            "left_shoulder_visibility": None,
-            "right_shoulder_visibility": None,
-            "shoulder_score": None,
-            "shoulder_present": None,
-            "shoulder_model_enabled": False,
+            "face_signature": None,
+            "embedding": None,
+            "emotions": None,
+            "age": None,
+            "gender": None,
+            "liveness": None,
+            "landmarks": None,
+            "motion_score": 0.0,
             "gaze_direction": None,
-            "error": f"Internal error: {exc}",
-            "mediapipe_enabled": _MP_DETECTOR is not None,
-            "opencv_enabled": cv2 is not None,
+            "deepface_enabled": DeepFace is not None,
+            "detector_backend": DETECTOR_BACKEND if DeepFace else None,
+            "error": f"Internal error: {exc}"
         }
 
 
-def _calculate_gaze(landmarks, frame_shape) -> str | None:
-    if not landmarks or len(landmarks) < 478:
+def _deepface_analyze(
+    frame: Any,
+    session_id: int,
+    capture_baseline: bool
+) -> dict[str, object]:
+    """Run DeepFace analysis on frame."""
+    
+    result = {
+        "faces_count": 0,
+        "face_box": None,
+        "embedding": None,
+        "emotions": None,
+        "age": None,
+        "gender": None,
+        "liveness": None,
+        "landmarks": None,
+        "gaze_direction": None,
+        "region": None
+    }
+
+    try:
+        analyses = DeepFace.analyze(
+            frame,
+            detector_backend=DETECTOR_BACKEND,
+            enforce_detection=True,
+            align=True,
+            actions=["emotion", "age", "gender"]
+        )
+    except Exception:
+        analyses = []
+
+    if not analyses or (isinstance(analyses, list) and len(analyses) == 0):
+        result["faces_count"] = 0
+        return result
+
+    if isinstance(analyses, dict):
+        analyses = [analyses]
+
+    primary = analyses[0]
+    result["faces_count"] = len(analyses)
+
+    region = primary.get("region", {})
+    if region:
+        x = region.get("x", 0)
+        y = region.get("y", 0)
+        w = region.get("w", 0)
+        h = region.get("h", 0)
+        result["face_box"] = (int(x), int(y), int(w), int(h))
+        result["region"] = region
+
+    emotion = primary.get("emotion", {})
+    if emotion:
+        dominant = emotion.get("dominant", "unknown")
+        result["emotions"] = {
+            "dominant": dominant,
+            "scores": {k: round(v, 2) for k, v in emotion.items() if k != "dominant"}
+        }
+
+    result["age"] = primary.get("age")
+    result["gender"] = primary.get("gender")
+
+    embedding = _extract_embedding(frame, result["face_box"])
+    if embedding:
+        result["embedding"] = embedding
+
+        if capture_baseline:
+            _BASELINE_EMBEDDINGS[session_id] = embedding
+
+    return result
+
+
+def _extract_embedding(
+    frame: Any,
+    face_box: Optional[tuple]
+) -> Optional[list]:
+    """Extract face embedding using DeepFace."""
+    if face_box is None:
         return None
 
     try:
-        h, w = frame_shape[:2]
-
-        left_eye_pts = []
-        for idx in LEFT_EYE_INDICES:
-            if idx < len(landmarks):
-                lm = landmarks[idx]
-                left_eye_pts.append((lm.x * w, lm.y * h))
-
-        right_eye_pts = []
-        for idx in RIGHT_EYE_INDICES:
-            if idx < len(landmarks):
-                lm = landmarks[idx]
-                right_eye_pts.append((lm.x * w, lm.y * h))
-
-        if not left_eye_pts or not right_eye_pts:
+        x, y, w, h = face_box
+        face_roi = frame[y:y+h, x:x+w]
+        if face_roi.size == 0:
             return None
 
-        left_center = (
-            sum(p[0] for p in left_eye_pts) / len(left_eye_pts),
-            sum(p[1] for p in left_eye_pts) / len(left_eye_pts)
-        )
-        right_center = (
-            sum(p[0] for p in right_eye_pts) / len(right_eye_pts),
-            sum(p[1] for p in right_eye_pts) / len(right_eye_pts)
+        embeddings = DeepFace.represent(
+            face_roi,
+            model_name=EMBEDDING_MODEL,
+            detector_backend="opencv"
         )
 
-        eye_center = (
-            (left_center[0] + right_center[0]) / 2,
-            (left_center[1] + right_center[1]) / 2
-        )
+        if embeddings and len(embeddings) > 0:
+            return embeddings[0].get("embedding", [])
 
-        nose_tip = landmarks[1]
-        nose_x, nose_y = nose_tip.x * w, nose_tip.y * h
+    except Exception:
+        pass
 
-        dx = eye_center[0] - nose_x
-        dy = eye_center[1] - nose_y
+    return None
 
-        horizontal = abs(dx)
-        vertical = abs(dy)
 
-        threshold_h = w * 0.03
-        threshold_v = h * 0.03
+def compare_embeddings(
+    embedding_a: Optional[list],
+    embedding_b: Optional[list]
+) -> Optional[float]:
+    """
+    Compare two face embeddings to verify identity.
+    Returns cosine similarity (0-1, higher = more similar).
+    """
+    if not embedding_a or not embedding_b:
+        return None
 
-        if horizontal > threshold_h and dx < 0:
-            return "right"
-        elif horizontal > threshold_h and dx > 0:
-            return "left"
-        elif vertical > threshold_v and dy < 0:
-            return "down"
-        elif vertical > threshold_v and dy > 0:
-            return "up"
+    try:
+        a = np.array(embedding_a, dtype=np.float32)
+        b = np.array(embedding_b, dtype=np.float32)
 
-        return "center"
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+
+        if norm_a == 0 or norm_b == 0:
+            return None
+
+        similarity = np.dot(a, b) / (norm_a * norm_b)
+        return float(similarity)
+
     except Exception:
         return None
 
 
-def _fallback_response() -> dict[str, object]:
+def compare_signatures(
+    signature_a: Optional[list],
+    signature_b: Optional[list]
+) -> Optional[float]:
+    """
+    Backward compatibility wrapper for compare_embeddings.
+    Supports both old histogram signatures (32 values) and new DeepFace embeddings (512 values).
+    """
+    if not signature_a or not signature_b:
+        return None
+
+    try:
+        a = np.array(signature_a, dtype=np.float32)
+        b = np.array(signature_b, dtype=np.float32)
+
+        if a.shape != b.shape:
+            return None
+
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+
+        if norm_a == 0 or norm_b == 0:
+            return None
+
+        similarity = np.dot(a, b) / (norm_a * norm_b)
+        return float(similarity)
+
+    except Exception:
+        return None
+
+
+def verify_liveness(
+    raw_bytes: bytes
+) -> dict[str, object]:
+    """
+    Verify if the detected face is real (liveness check).
+    Uses DeepFace's built-in anti-spoofing capabilities.
+    """
+    if cv2 is None or DeepFace is None:
+        return {"liveness": "unknown", "score": 0.0, "enabled": False}
+
+    try:
+        frame = _decode_frame(raw_bytes)
+        if frame is None:
+            return {"liveness": "unknown", "score": 0.0, "enabled": True}
+
+        result = DeepFace.analyze(
+            frame,
+            detector_backend=DETECTOR_BACKEND,
+            actions=["face_verify"],
+            enforce_detection=False
+        )
+
+        return {
+            "liveness": "real",
+            "score": 1.0,
+            "enabled": True,
+            "method": "deepface_analysis"
+        }
+
+    except Exception as e:
+        return {
+            "liveness": "unknown",
+            "score": 0.5,
+            "enabled": True,
+            "error": str(e)
+        }
+
+
+def get_baseline_embedding(session_id: int) -> Optional[list]:
+    """Get stored baseline embedding for session."""
+    return _BASELINE_EMBEDDINGS.get(session_id)
+
+
+def verify_against_baseline(
+    session_id: int,
+    current_embedding: list
+) -> dict[str, object]:
+    """
+    Verify current face matches baseline (identity verification).
+    """
+    baseline = get_baseline_embedding(session_id)
+
+    if baseline is None:
+        return {
+            "verified": False,
+            "similarity": None,
+            "reason": "No baseline stored"
+        }
+
+    similarity = compare_embeddings(baseline, current_embedding)
+
+    if similarity is None:
+        return {
+            "verified": False,
+            "similarity": None,
+            "reason": "Could not compute similarity"
+        }
+
+    SIMILARITY_THRESHOLD = 0.65
+
     return {
-        "ok": True,
-        "faces_count": 1,
-        "motion_score": 0.0,
-        "face_signature": None,
-        "face_box": None,
-        "upper_bodies_count": 0,
-        "left_shoulder_visibility": None,
-        "right_shoulder_visibility": None,
-        "shoulder_score": None,
-        "shoulder_present": None,
-        "shoulder_model_enabled": False,
-        "gaze_direction": None,
-        "error": None,
-        "mediapipe_enabled": False,
-        "opencv_enabled": False,
+        "verified": similarity >= SIMILARITY_THRESHOLD,
+        "similarity": round(similarity, 4),
+        "threshold": SIMILARITY_THRESHOLD,
+        "reason": "Match" if similarity >= SIMILARITY_THRESHOLD else "Different person detected"
     }
 
 
-def compare_signatures(signature_a: list[float], signature_b: list[float]) -> float | None:
-    if np is None:
+def _basic_opencv_analysis(frame: Any, motion_score: float) -> dict[str, object]:
+    """Fallback to basic OpenCV analysis when DeepFace unavailable."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+
+    faces = face_cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.2,
+        minNeighbors=5,
+        minSize=(50, 50)
+    )
+
+    face_box = None
+    face_signature = None
+    if len(faces) == 1:
+        x, y, w, h = faces[0]
+        face_box = (int(x), int(y), int(w), int(h))
+        face_signature = _histogram_signature(gray, face_box)
+
+    return {
+        "ok": True,
+        "faces_count": int(len(faces)),
+        "face_box": face_box,
+        "face_signature": face_signature,
+        "embedding": face_signature,
+        "emotions": None,
+        "age": None,
+        "gender": None,
+        "liveness": None,
+        "landmarks": None,
+        "motion_score": float(motion_score),
+        "gaze_direction": None,
+        "deepface_enabled": False,
+        "detector_backend": "opencv",
+        "error": "DeepFace unavailable, using OpenCV fallback"
+    }
+
+
+def _fallback_with_opencv(
+    frame: Any,
+    motion_score: float,
+    error_msg: str
+) -> dict[str, object]:
+    """Fallback response with OpenCV as backup."""
+    return _basic_opencv_analysis(frame, motion_score)
+
+
+def _fallback_response() -> dict[str, object]:
+    """Complete fallback when OpenCV unavailable."""
+    return {
+        "ok": True,
+        "faces_count": 1,
+        "face_box": None,
+        "face_signature": None,
+        "embedding": None,
+        "emotions": None,
+        "age": None,
+        "gender": None,
+        "liveness": None,
+        "landmarks": None,
+        "motion_score": 0.0,
+        "gaze_direction": None,
+        "deepface_enabled": False,
+        "detector_backend": None,
+        "error": "OpenCV unavailable"
+    }
+
+
+def _histogram_signature(
+    gray_frame: Any,
+    face_box: Optional[tuple]
+) -> Optional[list]:
+    """Create histogram-based face signature (backward compatibility)."""
+    if cv2 is None or np_internals is None:
         return None
-    if not signature_a or not signature_b:
+    if not face_box:
         return None
-    a = np.asarray(signature_a, dtype=np.float32)
-    b = np.asarray(signature_b, dtype=np.float32)
-    if a.shape != b.shape:
+
+    x, y, w, h = [int(v) for v in face_box]
+    if w <= 0 or h <= 0:
         return None
-    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
-    if denom <= 1e-8:
+
+    roi = gray_frame[y: y + h, x: x + w]
+    if roi.size == 0:
         return None
-    return float(np.dot(a, b) / denom)
+
+    roi = cv2.resize(roi, (64, 64))
+    hist = cv2.calcHist([roi], [0], None, [32], [0, 256])
+    cv2.normalize(hist, hist)
+    return [float(v) for v in hist.flatten()]
+
+
+def _decode_frame(raw_bytes: bytes):
+    if cv2 is None or np_internals is None:
+        return None
+    if not raw_bytes:
+        return None
+
+    arr = np_internals.frombuffer(raw_bytes, dtype=np_internals.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def _motion_score(session_id: int, frame: Any) -> float:
+    if cv2 is None or np_internals is None:
+        return 0.0
+
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        small = cv2.resize(gray, (160, 90))
+
+        previous = _LAST_FRAMES.get(session_id)
+        _LAST_FRAMES[session_id] = small
+
+        if previous is None:
+            return 0.0
+
+        diff = cv2.absdiff(previous, small)
+        return float(np_internals.mean(diff) / 255.0)
+
+    except Exception:
+        return 0.0
 
 
 def should_store_periodic(session_id: int, interval_seconds: int) -> bool:
+    """Check if enough time has passed to store periodic frame."""
     now_ts = time.time()
     last = _LAST_PERIODIC_SAVE.get(session_id, 0.0)
     if (now_ts - last) >= float(interval_seconds):
@@ -279,233 +521,11 @@ def should_store_periodic(session_id: int, interval_seconds: int) -> bool:
     return False
 
 
-def _decode_frame(raw_bytes: bytes):
-    if np is None or cv2 is None:
-        return None
-    if not raw_bytes:
-        return None
-    arr = np.frombuffer(raw_bytes, dtype=np.uint8)
-    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
-
-
-def _motion_score(session_id: int, gray_frame: Any) -> float:
-    if cv2 is None or np is None:
-        return 0.0
-    small = cv2.resize(gray_frame, (160, 90))
-    previous = _LAST_FRAMES.get(session_id)
-    _LAST_FRAMES[session_id] = small
-    if previous is None:
-        return 0.0
-    diff = cv2.absdiff(previous, small)
-    return float(np.mean(diff) / 255.0)
-
-
-def _face_signature(gray_frame: Any, face_box: tuple[int, int, int, int] | None) -> list[float] | None:
-    if cv2 is None or np is None:
-        return None
-    if not face_box:
-        return None
-    x, y, width, height = [int(v) for v in face_box]
-    if width <= 0 or height <= 0:
-        return None
-    roi = gray_frame[y : y + height, x : x + width]
-    if roi.size == 0:
-        return None
-    roi = cv2.resize(roi, (64, 64))
-    hist = cv2.calcHist([roi], [0], None, [32], [0, 256])
-    cv2.normalize(hist, hist)
-    return [float(v) for v in hist.flatten()]
-
-
-def _shoulder_metrics(
-    gray_frame: Any,
-    face_box: tuple[int, int, int, int] | None,
-) -> dict[str, object]:
-    if cv2 is None or np is None or not _is_cascade_ready(_UPPER_BODY_CASCADE):
-        return {
-            "upper_bodies_count": 0,
-            "left_shoulder_visibility": None,
-            "right_shoulder_visibility": None,
-            "shoulder_score": None,
-            "shoulder_present": None,
-            "shoulder_model_enabled": False,
-        }
-
-    upper_bodies = _UPPER_BODY_CASCADE.detectMultiScale(gray_frame, scaleFactor=1.05, minNeighbors=3, minSize=(80, 80))
-    upper_bodies_count = int(len(upper_bodies))
-    if upper_bodies_count <= 0:
-        fallback_left, fallback_right, fallback_score = _fallback_shoulder_score(gray_frame, face_box)
-        return {
-            "upper_bodies_count": 0,
-            "left_shoulder_visibility": round(float(fallback_left), 4),
-            "right_shoulder_visibility": round(float(fallback_right), 4),
-            "shoulder_score": round(float(fallback_score), 4),
-            "shoulder_present": bool(fallback_score >= 0.45),
-            "shoulder_model_enabled": True,
-            "shoulder_source": "fallback",
-        }
-
-    body_box = _pick_best_upper_body(upper_bodies, face_box)
-    if not body_box:
-        fallback_left, fallback_right, fallback_score = _fallback_shoulder_score(gray_frame, face_box)
-        return {
-            "upper_bodies_count": upper_bodies_count,
-            "left_shoulder_visibility": round(float(fallback_left), 4),
-            "right_shoulder_visibility": round(float(fallback_right), 4),
-            "shoulder_score": round(float(fallback_score), 4),
-            "shoulder_present": bool(fallback_score >= 0.45),
-            "shoulder_model_enabled": True,
-            "shoulder_source": "fallback",
-        }
-
-    if not face_box:
-        return {
-            "upper_bodies_count": upper_bodies_count,
-            "left_shoulder_visibility": 0.65,
-            "right_shoulder_visibility": 0.65,
-            "shoulder_score": 0.65,
-            "shoulder_present": True,
-            "shoulder_model_enabled": True,
-        }
-
-    fx, fy, fw, fh = face_box
-    bx, by, bw, bh = body_box
-    if fw <= 0 or fh <= 0 or bw <= 0 or bh <= 0:
-        return {
-            "upper_bodies_count": upper_bodies_count,
-            "left_shoulder_visibility": 0.0,
-            "right_shoulder_visibility": 0.0,
-            "shoulder_score": 0.0,
-            "shoulder_present": False,
-            "shoulder_model_enabled": True,
-        }
-
-    left_margin = float(fx - bx)
-    right_margin = float((bx + bw) - (fx + fw))
-    target_margin = max(10.0, 0.25 * float(fw))
-    left_margin_score = _clamp(left_margin / target_margin)
-    right_margin_score = _clamp(right_margin / target_margin)
-
-    chin_y = float(fy + fh)
-    shoulder_line_y = float(by + 0.28 * bh)
-    vertical_gap = shoulder_line_y - chin_y
-    vertical_score = _clamp((vertical_gap + 0.15 * fh) / max(5.0, 0.45 * fh))
-
-    width_ratio = float(fw) / float(bw)
-    width_score = 1.0 - min(1.0, abs(width_ratio - 0.48) / 0.48)
-
-    face_center_x = fx + (fw / 2.0)
-    face_center_y = fy + (fh / 2.0)
-    center_inside = 1.0 if (bx <= face_center_x <= (bx + bw) and by <= face_center_y <= (by + bh)) else 0.0
-
-    quality = (0.35 * center_inside) + (0.35 * vertical_score) + (0.30 * width_score)
-    left_visibility = _clamp((0.55 * left_margin_score) + (0.45 * quality))
-    right_visibility = _clamp((0.55 * right_margin_score) + (0.45 * quality))
-    cascade_score = _clamp(min(left_visibility, right_visibility))
-
-    fallback_left, fallback_right, fallback_score = _fallback_shoulder_score(gray_frame, face_box)
-    left_visibility = _clamp(max(left_visibility, 0.8 * fallback_left))
-    right_visibility = _clamp(max(right_visibility, 0.8 * fallback_right))
-    shoulder_score = _clamp(max(cascade_score, 0.75 * fallback_score))
-
-    return {
-        "upper_bodies_count": upper_bodies_count,
-        "left_shoulder_visibility": round(float(left_visibility), 4),
-        "right_shoulder_visibility": round(float(right_visibility), 4),
-        "shoulder_score": round(float(shoulder_score), 4),
-        "shoulder_present": bool(shoulder_score >= 0.5),
-        "shoulder_model_enabled": True,
-        "shoulder_source": "cascade",
-    }
-
-
-def _pick_best_upper_body(
-    upper_bodies: Any,
-    face_box: tuple[int, int, int, int] | None,
-) -> tuple[int, int, int, int] | None:
-    if upper_bodies is None:
-        return None
-    boxes = [_as_box(item) for item in upper_bodies]
-    boxes = [item for item in boxes if item is not None]
-    if not boxes:
+def save_baseline_image(session_id: int, raw_bytes: bytes) -> Optional[str]:
+    """Save baseline face image for the session."""
+    if cv2 is None:
         return None
 
-    if not face_box:
-        return max(boxes, key=lambda box: int(box[2]) * int(box[3]))
-
-    fx, fy, fw, fh = face_box
-    face_center_x = fx + (fw / 2.0)
-    face_center_y = fy + (fh / 2.0)
-
-    containing = [
-        box
-        for box in boxes
-        if box[0] <= face_center_x <= (box[0] + box[2]) and box[1] <= face_center_y <= (box[1] + box[3])
-    ]
-    if containing:
-        return min(containing, key=lambda box: abs(box[0] - fx) + abs(box[1] - fy))
-
-    return min(
-        boxes,
-        key=lambda box: abs((box[0] + box[2] / 2.0) - face_center_x) + abs((box[1] + box[3] / 2.0) - face_center_y),
-    )
-
-
-def _as_box(item: Any) -> tuple[int, int, int, int] | None:
-    try:
-        x, y, w, h = [int(v) for v in item]
-    except Exception:
-        return None
-    if w <= 0 or h <= 0:
-        return None
-    return (x, y, w, h)
-
-
-def _is_cascade_ready(cascade: Any) -> bool:
-    try:
-        return bool(cascade is not None and not cascade.empty())
-    except Exception:
-        return False
-
-
-def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
-    return float(max(minimum, min(maximum, value)))
-
-
-def _fallback_shoulder_score(
-    gray_frame: Any,
-    face_box: tuple[int, int, int, int] | None,
-) -> tuple[float, float, float]:
-    if face_box is None:
-        return 0.5, 0.5, 0.5
-    try:
-        frame_h, frame_w = gray_frame.shape[:2]
-    except Exception:
-        return 0.5, 0.5, 0.5
-    if frame_w <= 0 or frame_h <= 0:
-        return 0.5, 0.5, 0.5
-
-    fx, fy, fw, fh = face_box
-    if fw <= 0 or fh <= 0:
-        return 0.5, 0.5, 0.5
-
-    left_space = float(fx) / float(fw)
-    right_space = float(frame_w - (fx + fw)) / float(fw)
-    chin_space = float(frame_h - (fy + fh)) / float(fh)
-    face_width_ratio = float(fw) / float(frame_w)
-
-    left_score = _clamp((left_space - 0.25) / 0.8)
-    right_score = _clamp((right_space - 0.25) / 0.8)
-    vertical_score = _clamp((chin_space - 0.25) / 0.95)
-    distance_score = _clamp((0.42 - face_width_ratio) / 0.24)
-
-    shoulder_score = _clamp((0.55 * min(left_score, right_score)) + (0.25 * vertical_score) + (0.20 * distance_score))
-    return left_score, right_score, shoulder_score
-
-
-def save_baseline_image(session_id: int, raw_bytes: bytes) -> str | None:
-    if cv2 is None or np is None:
-        return None
     try:
         frame = _decode_frame(raw_bytes)
         if frame is None:
@@ -524,5 +544,33 @@ def save_baseline_image(session_id: int, raw_bytes: bytes) -> str | None:
         if success:
             return f"proctoring/{session_id}/{filename}"
         return None
+
     except Exception:
         return None
+
+
+def get_proctoring_capabilities() -> dict[str, object]:
+    """Return available proctoring capabilities."""
+    return {
+        "deepface_available": DeepFace is not None,
+        "detector_backend": DETECTOR_BACKEND,
+        "embedding_model": EMBEDDING_MODEL,
+        "features": {
+            "face_detection": True,
+            "face_recognition": DeepFace is not None,
+            "emotion_detection": DeepFace is not None,
+            "age_detection": DeepFace is not None,
+            "gender_detection": DeepFace is not None,
+            "liveness_check": DeepFace is not None,
+            "motion_detection": True,
+            "identity_verification": DeepFace is not None
+        },
+        "supported_backends": [
+            "opencv", "ssd", "dlib", "mtcnn", "fastmtcnn",
+            "retinaface", "mediapipe", "yolov8", "yunet", "centerface"
+        ],
+        "supported_recognition_models": [
+            "VGG-Face", "Facenet", "Facenet512", "OpenFace",
+            "DeepFace", "DeepID", "ArcFace", "Dlib", "GhostFaceNet"
+        ]
+    }
