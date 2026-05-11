@@ -170,6 +170,21 @@ function getPreferredSessionRecordingMimeType() {
   return candidates.find((t) => window.MediaRecorder.isTypeSupported(t)) || "";
 }
 
+function createSessionMediaRecorder(stream, mimeType) {
+  const options = {
+    videoBitsPerSecond: 450_000,
+    audioBitsPerSecond: 48_000,
+  };
+  if (mimeType) options.mimeType = mimeType;
+  try {
+    return new window.MediaRecorder(stream, options);
+  } catch {
+    return mimeType
+      ? new window.MediaRecorder(stream, { mimeType })
+      : new window.MediaRecorder(stream);
+  }
+}
+
 function wrapCanvasText(ctx, text, maxWidth, maxLines = 6) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean);
   const lines = [];
@@ -307,6 +322,7 @@ export default function Interview() {
   const sessionRecordingStartedAtRef = useRef(null);
   const sessionRecordingUploadedRef = useRef(false);
   const sessionRecordingFrameRef = useRef(null);
+  const sessionRecordingScreenVideoRef = useRef(null);
   const currentQuestionRef = useRef(null);
   const answerRef = useRef("");
   const questionNumberRef = useRef(questionNumber);
@@ -414,56 +430,78 @@ export default function Interview() {
     const displayTracks = displayStreamRef.current?.getVideoTracks?.().filter((track) => track.readyState === "live") || [];
     if (!videoEl && !audioTracks.length && !displayTracks.length) return;
     try {
-      let recordingStream;
-      if (displayTracks.length) {
-        recordingStream = new MediaStream(displayTracks);
+      if (sessionRecordingScreenVideoRef.current) {
+        sessionRecordingScreenVideoRef.current.srcObject = null;
+        sessionRecordingScreenVideoRef.current = null;
+      }
+      let screenVideoEl = null;
+      if (displayTracks.length && displayStreamRef.current) {
+        screenVideoEl = document.createElement("video");
+        screenVideoEl.srcObject = new MediaStream(displayTracks);
+        screenVideoEl.muted = true;
+        screenVideoEl.playsInline = true;
+        screenVideoEl.play().catch(() => {});
+        sessionRecordingScreenVideoRef.current = screenVideoEl;
         displayTracks[0].onended = () => setScreenRecordingStatus("screen-stopped");
-        setScreenRecordingStatus("screen");
-      } else {
-        const canvas = document.createElement("canvas");
-        canvas.width = 1280;
-        canvas.height = 720;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
+      }
 
-        const draw = () => {
-          ctx.fillStyle = "#07111f";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280;
+      canvas.height = 720;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-          ctx.fillStyle = "#0f172a";
-          ctx.fillRect(32, 32, 728, 656);
-          ctx.fillStyle = "#111827";
-          ctx.fillRect(792, 32, 456, 656);
+      const drawVideoCover = (source, x, y, w, h, mirror = false) => {
+        const vw = source.videoWidth || 0;
+        const vh = source.videoHeight || 0;
+        if (!vw || !vh) return false;
+        const scale = Math.max(w / vw, h / vh);
+        const drawW = vw * scale;
+        const drawH = vh * scale;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+        if (mirror) {
+          ctx.translate(x + w, y);
+          ctx.scale(-1, 1);
+          ctx.drawImage(source, (w - drawW) / 2, (h - drawH) / 2, drawW, drawH);
+        } else {
+          ctx.drawImage(source, x + (w - drawW) / 2, y + (h - drawH) / 2, drawW, drawH);
+        }
+        ctx.restore();
+        return true;
+      };
 
-          if (videoEl?.readyState >= 2 && videoEl.videoWidth > 0) {
-            const boxX = 812;
-            const boxY = 52;
-            const boxW = 416;
-            const boxH = 312;
-            const scale = Math.max(boxW / videoEl.videoWidth, boxH / videoEl.videoHeight);
-            const drawW = videoEl.videoWidth * scale;
-            const drawH = videoEl.videoHeight * scale;
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(boxX, boxY, boxW, boxH);
-            ctx.clip();
-            ctx.translate(boxX + boxW, boxY);
-            ctx.scale(-1, 1);
-            ctx.drawImage(videoEl, (boxW - drawW) / 2, (boxH - drawH) / 2, drawW, drawH);
-            ctx.restore();
-          } else {
-            ctx.fillStyle = "#020617";
-            ctx.fillRect(812, 52, 416, 312);
-            ctx.fillStyle = "#94a3b8";
-            ctx.font = "700 24px Inter, Arial, sans-serif";
-            ctx.fillText("Camera preview unavailable", 872, 214);
-          }
+      const draw = () => {
+        ctx.fillStyle = "#07111f";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-          const q = currentQuestionRef.current || {};
-          const qNo = questionNumberRef.current || 1;
-          const max = maxQuestionsRef.current || 1;
-          const answerText = answerRef.current || "Candidate answer transcript will appear here as speech is transcribed.";
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(32, 32, 728, 656);
+        ctx.fillStyle = "#111827";
+        ctx.fillRect(792, 32, 456, 656);
 
+        const q = currentQuestionRef.current || {};
+        const qNo = questionNumberRef.current || 1;
+        const max = maxQuestionsRef.current || 1;
+        const answerText = answerRef.current || "Candidate answer transcript will appear here as speech is transcribed.";
+        const hasScreen = screenVideoEl?.readyState >= 2 && screenVideoEl.videoWidth > 0;
+
+        if (hasScreen) {
+          drawVideoCover(screenVideoEl, 56, 76, 680, 372, false);
+          ctx.fillStyle = "#60a5fa";
+          ctx.font = "800 20px Inter, Arial, sans-serif";
+          ctx.fillText(`Question ${qNo} of ${max}`, 56, 58);
+          ctx.fillStyle = "#93c5fd";
+          ctx.font = "800 20px Inter, Arial, sans-serif";
+          ctx.fillText("Candidate Answer", 56, 494);
+          ctx.fillStyle = "#dbeafe";
+          ctx.font = "500 22px Inter, Arial, sans-serif";
+          wrapCanvasText(ctx, answerText, 648, 4).forEach((line, index) => {
+            ctx.fillText(line, 56, 536 + index * 30);
+          });
+        } else {
           ctx.fillStyle = "#60a5fa";
           ctx.font = "800 22px Inter, Arial, sans-serif";
           ctx.fillText(`Question ${qNo} of ${max}`, 64, 82);
@@ -482,34 +520,42 @@ export default function Interview() {
           wrapCanvasText(ctx, answerText, 648, 7).forEach((line, index) => {
             ctx.fillText(line, 64, 492 + index * 34);
           });
+        }
 
-          ctx.fillStyle = "#e2e8f0";
-          ctx.font = "800 24px Inter, Arial, sans-serif";
-          ctx.fillText("Candidate Camera", 812, 410);
+        if (videoEl?.readyState >= 2 && videoEl.videoWidth > 0) {
+          drawVideoCover(videoEl, 812, 52, 416, 312, true);
+        } else {
+          ctx.fillStyle = "#020617";
+          ctx.fillRect(812, 52, 416, 312);
           ctx.fillStyle = "#94a3b8";
-          ctx.font = "600 20px Inter, Arial, sans-serif";
-          wrapCanvasText(ctx, "Microphone audio is included in this recording. Full evaluated answers are listed below in HR review.", 380, 5)
-            .forEach((line, index) => ctx.fillText(line, 812, 454 + index * 30));
+          ctx.font = "700 24px Inter, Arial, sans-serif";
+          ctx.fillText("Camera preview unavailable", 872, 214);
+        }
 
-          ctx.fillStyle = "#ef4444";
-          ctx.beginPath();
-          ctx.arc(816, 650, 7, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#f8fafc";
-          ctx.font = "800 18px Inter, Arial, sans-serif";
-          ctx.fillText("REC", 834, 656);
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = "800 24px Inter, Arial, sans-serif";
+        ctx.fillText("Candidate Camera", 812, 410);
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "600 20px Inter, Arial, sans-serif";
+        wrapCanvasText(ctx, "Microphone audio is included in this recording. Full evaluated answers are listed below in HR review.", 380, 5)
+          .forEach((line, index) => ctx.fillText(line, 812, 454 + index * 30));
 
-          sessionRecordingFrameRef.current = window.requestAnimationFrame(draw);
-        };
-        draw();
-        recordingStream = canvas.captureStream(12);
-        setScreenRecordingStatus("composed");
-      }
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(816, 650, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = "800 18px Inter, Arial, sans-serif";
+        ctx.fillText("REC", 834, 656);
+
+        sessionRecordingFrameRef.current = window.requestAnimationFrame(draw);
+      };
+      draw();
+      const recordingStream = canvas.captureStream(12);
+      setScreenRecordingStatus(screenVideoEl ? "screen" : "composed");
       audioTracks.forEach((track) => recordingStream.addTrack(track));
       const mimeType = getPreferredSessionRecordingMimeType();
-      const recorder = mimeType
-        ? new window.MediaRecorder(recordingStream, { mimeType })
-        : new window.MediaRecorder(recordingStream);
+      const recorder = createSessionMediaRecorder(recordingStream, mimeType);
       sessionRecordingChunksRef.current = [];
       sessionRecordingStartedAtRef.current = Date.now();
       recorder.ondataavailable = (ev) => {
@@ -533,6 +579,10 @@ export default function Interview() {
       if (sessionRecordingFrameRef.current) {
         window.cancelAnimationFrame(sessionRecordingFrameRef.current);
         sessionRecordingFrameRef.current = null;
+      }
+      if (sessionRecordingScreenVideoRef.current) {
+        sessionRecordingScreenVideoRef.current.srcObject = null;
+        sessionRecordingScreenVideoRef.current = null;
       }
       const chunks = sessionRecordingChunksRef.current;
       sessionRecordingChunksRef.current = [];
@@ -692,6 +742,10 @@ export default function Interview() {
       if (sessionRecordingFrameRef.current) {
         window.cancelAnimationFrame(sessionRecordingFrameRef.current);
         sessionRecordingFrameRef.current = null;
+      }
+      if (sessionRecordingScreenVideoRef.current) {
+        sessionRecordingScreenVideoRef.current.srcObject = null;
+        sessionRecordingScreenVideoRef.current = null;
       }
       releaseAudioStream();
       if (displayStreamRef.current) {

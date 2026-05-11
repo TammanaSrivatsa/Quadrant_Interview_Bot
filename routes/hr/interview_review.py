@@ -20,13 +20,14 @@ import logging
 from collections import defaultdict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from ai_engine.phase1.scoring import compute_answer_scorecard
-from database import get_db
+from database import get_db
+from core.config import config
 from models import (
     Candidate, InterviewAnswer, InterviewQuestion,
     InterviewSession, JobDescription, ProctorEvent, Result,
@@ -174,7 +175,24 @@ def _recording_url(session: InterviewSession) -> str | None:
     value = str(path)
     if value.startswith(("http://", "https://")):
         return value
-    return f"/uploads/{value.lstrip('/')}"
+    return f"/api/hr/interviews/{session.id}/recording"
+
+
+def _recording_file_path(session: InterviewSession):
+    path = getattr(session, "recording_path", None)
+    if not path:
+        return None
+    value = str(path)
+    if value.startswith(("http://", "https://")):
+        return value
+    upload_root = config.UPLOAD_DIR.resolve()
+    candidate = (upload_root / value.lstrip("/")).resolve()
+    try:
+        if candidate.is_file() and candidate.is_relative_to(upload_root):
+            return candidate
+    except Exception:
+        return None
+    return None
 
 
 @router.get("/interviews")
@@ -429,7 +447,45 @@ def interview_detail(
 
 # ── finalize interview ────────────────────────────────────────────────────────
 
-class FinalizeBody(BaseModel):
+@router.get("/interviews/{interview_id}/recording")
+def interview_recording(
+    interview_id: int,
+    current_user: SessionUser = Depends(require_role("hr")),
+    db: Session = Depends(get_db),
+):
+    session = (
+        db.query(InterviewSession)
+        .join(Result, InterviewSession.result_id == Result.id)
+        .join(JobDescription, Result.job_id == JobDescription.id)
+        .filter(
+            InterviewSession.id == interview_id,
+            JobDescription.company_id == current_user.user_id,
+        )
+        .first()
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    recording_path = _recording_file_path(session)
+    if not recording_path:
+        raise HTTPException(status_code=404, detail="Recording file not found")
+    if isinstance(recording_path, str):
+        return RedirectResponse(recording_path)
+
+    media_type = (session.recording_mime_type or "video/webm").split(";")[0].strip() or "video/webm"
+    return FileResponse(
+        path=str(recording_path),
+        media_type=media_type,
+        filename=recording_path.name,
+        content_disposition_type="inline",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=0, no-store",
+        },
+    )
+
+
+class FinalizeBody(BaseModel):
     decision: str
     notes: str | None = None
     final_score: float | None = Field(default=None, ge=0, le=100)

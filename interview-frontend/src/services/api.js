@@ -17,6 +17,18 @@ const apiClient = axios.create({
 
 export { apiClient, baseURL };
 
+export function backendAssetUrl(path) {
+  if (!path) return "";
+  const value = String(path);
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  if (!value.startsWith("/")) return value;
+
+  const apiUrl = new URL(baseURL || "/api", window.location.origin);
+  const apiRootPath = apiUrl.pathname.replace(/\/api\/?$/, "") || "/";
+  const assetPath = `${apiRootPath.replace(/\/+$/, "")}${value}`;
+  return `${apiUrl.origin}${assetPath}`;
+}
+
 function buildAvatar(name) {
   const seed = String(name || "user").trim() || "user";
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;

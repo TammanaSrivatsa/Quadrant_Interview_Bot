@@ -4,13 +4,11 @@ import { CheckCircle2, XCircle, AlertTriangle, Camera, Clock, RefreshCw, Sparkle
 import MetricCard from "../components/MetricCard";
 import PageHeader from "../components/PageHeader";
 import StatusBadge from "../components/StatusBadge";
-import { hrApi } from "../services/api";
+import { backendAssetUrl, hrApi } from "../services/api";
 import { formatDateTime } from "../utils/formatters";
 
 function makeFullUrl(path) {
-  if (!path) return "";
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${window.location.origin}${path}`;
+  return backendAssetUrl(path);
 }
 
 function scoreColor(score) {
@@ -388,6 +386,12 @@ export default function HRInterviewDetailPage() {
   const evalStatus = interview.llm_eval_status || "pending";
   const canReEvaluate = evalStatus !== "running" && pendingCount > 0;
   const summary = interview.evaluation_summary || {};
+  const recordingUrl = interview.recording_url ? makeFullUrl(interview.recording_url) : "";
+  const recordingCacheKey = [
+    recordingUrl,
+    interview.recording_uploaded_at || "",
+    interview.recording_size_bytes || "",
+  ].join(":");
 
   return (
     <div className="space-y-8 pb-12">
@@ -422,13 +426,23 @@ export default function HRInterviewDetailPage() {
           </div>
         </div>
         <div className="p-6">
-          {interview.recording_url ? (
-            <video
-              src={makeFullUrl(interview.recording_url)}
-              controls
-              preload="metadata"
-              className="w-full max-h-[560px] rounded-2xl bg-slate-950 border border-slate-200 dark:border-slate-800"
-            />
+          {recordingUrl ? (
+            <div className="space-y-3">
+              <video
+                key={recordingCacheKey}
+                src={recordingUrl}
+                controls
+                preload="metadata"
+                crossOrigin="use-credentials"
+                className="w-full max-h-[560px] rounded-2xl bg-slate-950 border border-slate-200 dark:border-slate-800"
+              />
+              <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-slate-500 dark:text-slate-400">
+                <span>{interview.recording_size_bytes ? `${(Number(interview.recording_size_bytes) / 1_000_000).toFixed(2)} MB` : "Recording file attached"}</span>
+                <a href={recordingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline font-bold">
+                  <Video size={14} />Open recording
+                </a>
+              </div>
+            </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8 text-center text-slate-500 dark:text-slate-400">
               <Video size={28} className="mx-auto mb-3 opacity-60" />
