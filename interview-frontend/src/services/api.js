@@ -80,6 +80,13 @@ function extractErrorMessage(error) {
   return error?.message || "Something went wrong. Please try again.";
 }
 
+function unwrapApiBody(body) {
+  if (body && typeof body === "object" && "success" in body && "data" in body) {
+    return body.data;
+  }
+  return body;
+}
+
 const API_TIMEOUT_MS = 30000; // 30s timeout for all API calls
 
 async function request(config) {
@@ -96,10 +103,7 @@ async function request(config) {
     // Unwrap ApiResponseMiddleware wrapper: { success, data, error }
     // Backend endpoints return { ok, ... } — middleware wraps them automatically.
     const body = response.data;
-    if (body && typeof body === 'object' && 'success' in body && 'data' in body) {
-      return body.data;
-    }
-    return body;
+    return unwrapApiBody(body);
   } catch (error) {
     console.error(`[API] Error status:`, error.response?.status);
     console.error(`[API] Error content-type:`, error.response?.headers?.["content-type"]);
@@ -246,7 +250,7 @@ export const candidateApi = {
           { resume_url: s3Url, job_id: jobId },
           { headers: { "Content-Type": "application/json" } }
         );
-        return response.data;
+        return unwrapApiBody(response.data);
       }
       
       const formData = new FormData();
@@ -256,7 +260,7 @@ export const candidateApi = {
       const response = await apiClient.post("/candidate/upload-resume", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      return response.data;
+      return unwrapApiBody(response.data);
     } catch (err) {
       console.error("[UPLOAD] Resume upload failed:", err.message);
       throw err;

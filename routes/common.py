@@ -336,6 +336,15 @@ def list_available_jobs(db: Session) -> list[dict[str, object]]:
 
 def list_active_jds(db: Session) -> list[dict[str, object]]:
     jds = db.query(JobDescription).filter(JobDescription.is_active == True).order_by(JobDescription.id.desc()).all()
+    return serialize_jd_list(jds)
+
+
+def list_candidate_jds(db: Session) -> list[dict[str, object]]:
+    jds = db.query(JobDescription).order_by(JobDescription.id.desc()).all()
+    return serialize_jd_list(jds)
+
+
+def serialize_jd_list(jds) -> list[dict[str, object]]:
     payload: list[dict[str, object]] = []
     for jd in jds:
         payload.append(
@@ -350,7 +359,7 @@ def list_active_jds(db: Session) -> list[dict[str, object]]:
                 "min_academic_percent": float(jd.min_academic_percent if jd.min_academic_percent is not None else 0.0),
                 "total_questions": int(jd.total_questions if jd.total_questions is not None else 8),
                 "project_question_ratio": float(jd.project_question_ratio if jd.project_question_ratio is not None else 0.8),
-                "is_active": True,
+                "is_active": bool(jd.is_active if jd.is_active is not None else True),
                 "created_at": jd.created_at,
             }
         )

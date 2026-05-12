@@ -3,10 +3,10 @@ import {
   Lock, Moon, Sun, Shield, LogOut, Camera,
   CheckCircle2, Eye, EyeOff, Save, Monitor, Smartphone,
   ToggleLeft, AlertCircle, Loader2, User, HelpCircle,
-  Minus, Plus, ExternalLink
+  Minus, Plus, ExternalLink, Upload, FileText
 } from "lucide-react";
 import { useAuth } from "../context/useAuth";
-import { authApi } from "../services/api";
+import { authApi, candidateApi } from "../services/api";
 import { cn } from "../utils/utils";
 
 // LinkedIn icon component
@@ -123,6 +123,7 @@ export default function SettingsPage() {
   const { user, logout, refreshSession } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const fileInputRef = useRef(null);
+  const resumeInputRef = useRef(null);
 
   // Profile state
   const [name, setName] = useState(user?.name || "");
@@ -130,6 +131,8 @@ export default function SettingsPage() {
   const [linkedinUrl, setLinkedinUrl] = useState(user?.linkedin_url || "");
   const [githubUrl, setGithubUrl] = useState(user?.github_url || "");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [resumeApplications, setResumeApplications] = useState([]);
 
   // Password state
   const [currentPw, setCurrentPw] = useState("");
@@ -205,6 +208,30 @@ export default function SettingsPage() {
       showToast("Failed to update profile", "error");
     } finally {
       setSavingProfile(false);
+    }
+  }
+
+  async function handleResumeReupload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingResume(true);
+    try {
+      const response = await candidateApi.uploadResume(file);
+      const nextApplications = Array.isArray(response?.applications) ? response.applications : [];
+      setResumeApplications(nextApplications);
+      const checkedCount = nextApplications.length || response?.available_jds?.length || 0;
+      showToast(
+        checkedCount
+          ? `Resume re-uploaded. ${checkedCount} JD${checkedCount === 1 ? "" : "s"} checked.`
+          : "Resume re-uploaded successfully."
+      );
+    } catch (err) {
+      showToast(err.message || "Failed to re-upload resume", "error");
+    } finally {
+      setUploadingResume(false);
+      if (resumeInputRef.current) {
+        resumeInputRef.current.value = "";
+      }
     }
   }
 
@@ -455,6 +482,68 @@ export default function SettingsPage() {
                   </button>
                 </div>
               </Section>
+
+              {!isHR && (
+                <Section title="Resume" sub="Re-upload your resume and refresh JD selection results" icon={FileText}>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">Candidate Resume</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Upload a new resume to re-check all HR-created JDs and update selected or rejected status.
+                      </p>
+                    </div>
+                    <input
+                      ref={resumeInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt,.rtf"
+                      className="hidden"
+                      onChange={handleResumeReupload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => resumeInputRef.current?.click()}
+                      disabled={uploadingResume}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all disabled:opacity-60 whitespace-nowrap"
+                    >
+                      {uploadingResume ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                      {uploadingResume ? "Checking JDs..." : "Re-upload Resume"}
+                    </button>
+                  </div>
+                  {resumeApplications.length > 0 && (
+                    <div className="mt-6 border-t border-slate-100 dark:border-slate-800 pt-5">
+                      <div className="flex flex-wrap gap-3 mb-4">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm font-bold">
+                          <CheckCircle2 size={15} />
+                          {resumeApplications.filter((app) => app.status === "selected").length} Selected
+                        </span>
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm font-bold">
+                          <AlertCircle size={15} />
+                          {resumeApplications.filter((app) => app.status === "rejected").length} Not Selected
+                        </span>
+                      </div>
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden">
+                        {resumeApplications.map((application) => (
+                          <div key={application.jd_id} className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50/60 dark:bg-slate-800/40">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{application.jd_title}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Cutoff {application.jd_qualify_score ?? "N/A"}%</p>
+                            </div>
+                            <span className={cn(
+                              "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black whitespace-nowrap",
+                              application.status === "selected"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                            )}>
+                              {application.status === "selected" ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+                              {application.status === "selected" ? "Selected" : "Not Selected"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Section>
+              )}
             </form>
           )}
 

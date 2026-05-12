@@ -21,7 +21,7 @@ from routes.common import (
     evaluate_resume_for_job,
     get_candidate_or_404,
     interview_entry_url,
-    list_active_jds,
+    list_candidate_jds,
     list_available_jobs,
     parse_interview_datetime_utc,
     serialize_result,
@@ -85,6 +85,55 @@ def _resume_advice_payload(
     )
 
 
+def _application_status(result: Result) -> str:
+    if str(result.stage or "").lower() == "rejected" or str(result.hr_decision or "").lower() == "rejected":
+        return "rejected"
+    if result.shortlisted or str(result.hr_decision or "").lower() == "selected":
+        return "selected"
+    if result.score is not None:
+        return "rejected"
+    return "under_review"
+
+
+def _application_payload(result: Result, jd_info: dict[str, object] | None = None) -> dict[str, object]:
+    applied_at = result.stage_updated_at or getattr(result, "interview_datetime", None)
+    jd_info = jd_info or {}
+    return {
+        "jd_id": result.job_id,
+        "jd_title": jd_info.get("title", "Unknown Role"),
+        "jd_qualify_score": jd_info.get("qualify_score"),
+        "status": _application_status(result),
+        "applied_at": applied_at.isoformat() if applied_at else None,
+    }
+
+
+def _screen_candidate_against_jobs(
+    *,
+    db: Session,
+    candidate,
+    jobs: list[JobDescription],
+) -> tuple[dict[int, Result], dict[int, dict[str, object]]]:
+    results_by_job: dict[int, Result] = {}
+    serialized_by_job: dict[int, dict[str, object]] = {}
+    for job in jobs:
+        score, explanation, _ = evaluate_resume_for_job(candidate, job)
+        result = upsert_result(
+            db,
+            candidate.id,
+            job.id,
+            score,
+            explanation,
+            cutoff_score=float(job.qualify_score if job.qualify_score is not None else 65.0),
+            job=job,
+        )
+        _generate_result_question_bank(result=result, resume_text=candidate.resume_text or "", job=job)
+        db.commit()
+        db.refresh(result)
+        results_by_job[job.id] = result
+        serialized_by_job[job.id] = serialize_result(result)
+    return results_by_job, serialized_by_job
+
+
 @router.get("/candidate/dashboard")
 def candidate_dashboard(
     job_id: int | None = None,
@@ -101,7 +150,7 @@ def candidate_dashboard(
         db.refresh(candidate)
 
     available_jobs = list_available_jobs(db)
-    available_jds = list_active_jds(db)
+    available_jds = list_candidate_jds(db)
     selected_job_id = candidate.selected_jd_id or (available_jds[0]["id"] if available_jds else None)
 
     result = None
@@ -154,7 +203,7 @@ def candidate_jds(
     return {
         "ok": True,
         "selected_jd_id": candidate.selected_jd_id,
-        "jds": list_active_jds(db),
+        "jds": list_candidate_jds(db),
     }
 
 
@@ -176,25 +225,13 @@ def candidate_all_results(
         .all()
     )
 
-    available_jds = list_active_jds(db)
+    available_jds = list_candidate_jds(db)
     jd_map = {jd["id"]: jd for jd in available_jds}
 
     applications = []
     for r in results:
         jd_info = jd_map.get(r.job_id, {})
-        status = "under_review"
-        if r.shortlisted:
-            status = "selected"
-        elif r.stage and r.stage.key == "rejected":
-            status = "rejected"
-        
-        applications.append({
-            "jd_id": r.job_id,
-            "jd_title": jd_info.get("title", "Unknown Role"),
-            "jd_qualify_score": jd_info.get("qualify_score"),
-            "status": status,
-            "applied_at": r.created_at.isoformat() if r.created_at else None,
-        })
+        applications.append(_application_payload(r, jd_info))
 
     return {
         "ok": True,
@@ -221,7 +258,7 @@ def candidate_select_jd(
     logger.info(f"SELECT_JD: resume_path={candidate.resume_path}, resume_text_len={len(candidate.resume_text or '')}")
 
     result_data = None
-    if candidate.resume_path and (candidate.resume_text or "").strip():
+    if candidate.resume_path:
         try:
             logger.info(f"SELECT_JD running resume screening for candidate_id={candidate.id}, jd_id={selected_jd.id}")
             score, explanation, _ = evaluate_resume_for_job(candidate, selected_jd)
@@ -233,6 +270,11 @@ def candidate_select_jd(
                 score,
                 explanation,
                 cutoff_score=float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
+                job=selected_jd,
+            )
+            _generate_result_question_bank(
+                result=result,
+                resume_text=candidate.resume_text or "",
                 job=selected_jd,
             )
             db.commit()
@@ -256,6 +298,7 @@ def candidate_select_jd(
             logger.error(f"SELECT_JD screening failed: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Resume screening failed: {str(e)}")
 
     return {
         "ok": True,
@@ -339,9 +382,22 @@ def upload_resume(
     db.refresh(candidate)
     logger.info(f"UPLOAD_RESUME resume_path saved to DB: {candidate.resume_path}")
 
-    selected_jd_id = job_id or candidate.selected_jd_id
+    all_jds = db.query(JobDescription).order_by(JobDescription.id.desc()).all()
+    selected_jd_id = job_id or candidate.selected_jd_id or (all_jds[0].id if all_jds else None)
     if not selected_jd_id:
-        raise HTTPException(status_code=400, detail="Select a JD before uploading resume")
+        db.commit()
+        return {
+            "ok": True,
+            "message": "Resume uploaded. No job description available yet.",
+            "uploaded_resume": safe_filename,
+            "result": None,
+            "results": {},
+            "applications": [],
+            "available_jobs": list_available_jobs(db),
+            "available_jds": list_candidate_jds(db),
+            "selected_job_id": None,
+            "selected_jd_id": None,
+        }
 
     selected_jd = _selected_jd_or_404(db, selected_jd_id)
     candidate.selected_jd_id = selected_jd.id
@@ -366,32 +422,25 @@ def upload_resume(
     )
     if not resume_text:
         raise HTTPException(status_code=400, detail="Resume text could not be extracted. Please upload a valid PDF, DOCX, or TXT file.")
-    if not selected_jd:
-        db.commit()
-        return {
-            "ok": True,
-            "message": "Resume uploaded. No job description available yet.",
-            "uploaded_resume": safe_filename,
-            "result": None,
-            "available_jobs": list_available_jobs(db),
-            "available_jds": list_active_jds(db),
-            "selected_job_id": None,
-            "selected_jd_id": None,
-        }
-
-    result = upsert_result(
-        db,
-        candidate.id,
-        selected_jd.id,
-        score,
-        explanation,
-        cutoff_score=float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
-        job=selected_jd,
+    results_by_job, serialized_results = _screen_candidate_against_jobs(
+        db=db,
+        candidate=candidate,
+        jobs=all_jds,
     )
-
-    questions = _generate_result_question_bank(result=result, resume_text=resume_text, job=selected_jd)
-    db.commit()
-    db.refresh(result)
+    result = results_by_job.get(selected_jd.id)
+    if not result:
+        raise HTTPException(status_code=500, detail="Resume screening did not produce a result for the selected JD")
+    questions = result.interview_questions or []
+    applications = [
+        _application_payload(
+            row,
+            {
+                "title": row.job.title if row.job else "Unknown Role",
+                "qualify_score": float(row.job.qualify_score) if row.job and row.job.qualify_score is not None else None,
+            },
+        )
+        for row in results_by_job.values()
+    ]
 
     dashboard_url = f"{config.FRONTEND_URL.rstrip('/')}/#/login?next=%2Fcandidate%2Fschedule" if result.shortlisted else f"{config.FRONTEND_URL.rstrip('/')}/#/login"
     try:
@@ -434,10 +483,12 @@ def upload_resume(
             "created_at": candidate.created_at,
         },
         "available_jobs": list_available_jobs(db),
-        "available_jds": list_active_jds(db),
+        "available_jds": list_candidate_jds(db),
         "selected_job_id": selected_jd.id,
         "selected_jd_id": selected_jd.id,
         "result": serialize_result(result),
+        "results": serialized_results,
+        "applications": applications,
         "question_count": len(questions or []),
         "resume_advice": _resume_advice_payload(
             candidate=candidate,
@@ -469,9 +520,22 @@ def upload_resume_s3(
     db.commit()
     db.refresh(candidate)
 
-    selected_jd_id = job_id or candidate.selected_jd_id
+    all_jds = db.query(JobDescription).order_by(JobDescription.id.desc()).all()
+    selected_jd_id = job_id or candidate.selected_jd_id or (all_jds[0].id if all_jds else None)
     if not selected_jd_id:
-        raise HTTPException(status_code=400, detail="Select a JD before uploading resume")
+        db.commit()
+        return {
+            "ok": True,
+            "message": "Resume uploaded. No job description available yet.",
+            "uploaded_resume": Path(resume_url).name,
+            "result": None,
+            "results": {},
+            "applications": [],
+            "available_jobs": list_available_jobs(db),
+            "available_jds": list_candidate_jds(db),
+            "selected_job_id": None,
+            "selected_jd_id": None,
+        }
 
     selected_jd = _selected_jd_or_404(db, selected_jd_id)
     candidate.selected_jd_id = selected_jd.id
@@ -518,19 +582,25 @@ def upload_resume_s3(
         logger.error(f"UPLOAD_RESUME_S3 evaluation FAILED: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Resume evaluation failed: {str(e)}")
 
-    result = upsert_result(
-        db,
-        candidate.id,
-        selected_jd.id,
-        score,
-        explanation,
-        cutoff_score=float(selected_jd.qualify_score if selected_jd.qualify_score is not None else 65.0),
-        job=selected_jd,
+    results_by_job, serialized_results = _screen_candidate_against_jobs(
+        db=db,
+        candidate=candidate,
+        jobs=all_jds,
     )
-
-    questions = _generate_result_question_bank(result=result, resume_text=candidate.resume_text or "", job=selected_jd)
-    db.commit()
-    db.refresh(result)
+    result = results_by_job.get(selected_jd.id)
+    if not result:
+        raise HTTPException(status_code=500, detail="Resume screening did not produce a result for the selected JD")
+    questions = result.interview_questions or []
+    applications = [
+        _application_payload(
+            row,
+            {
+                "title": row.job.title if row.job else "Unknown Role",
+                "qualify_score": float(row.job.qualify_score) if row.job and row.job.qualify_score is not None else None,
+            },
+        )
+        for row in results_by_job.values()
+    ]
 
     dashboard_url = f"{config.FRONTEND_URL.rstrip('/')}/#/login?next=%2Fcandidate%2Fschedule" if result.shortlisted else f"{config.FRONTEND_URL.rstrip('/')}/#/login"
     try:
@@ -573,10 +643,12 @@ def upload_resume_s3(
             "created_at": candidate.created_at,
         },
         "available_jobs": list_available_jobs(db),
-        "available_jds": list_active_jds(db),
+        "available_jds": list_candidate_jds(db),
         "selected_job_id": selected_jd.id,
         "selected_jd_id": selected_jd.id,
         "result": serialize_result(result),
+        "results": serialized_results,
+        "applications": applications,
         "question_count": len(questions or []),
         "resume_advice": _resume_advice_payload(
             candidate=candidate,

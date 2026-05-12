@@ -32,7 +32,9 @@ export default function CandidateDashboardPage() {
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [applications, setApplications] = useState([]);
+  const [pendingApplyJd, setPendingApplyJd] = useState(null);
   const fileInputRef = useRef(null);
+  const pendingApplyRef = useRef(null);
 
   const { announce } = useAnnounce();
 
@@ -43,8 +45,12 @@ export default function CandidateDashboardPage() {
     (dashboard?.available_jds || []).find((jd) => jd.id === selectedJdId) || null, 
     [dashboard, selectedJdId]
   );
+  const applicationsByJd = useMemo(() => {
+    return new Map((applications || []).map((application) => [application.jd_id, application]));
+  }, [applications]);
   
   const result = dashboard?.result || null;
+  const selectedApplication = applicationsByJd.get(selectedJdId);
   const interviewRoute = routeFromInterviewLink(result?.interview_link);
   const interviewReady = Boolean(result?.interview_ready && interviewRoute);
   const interviewCompleted = Boolean(result?.interview_completed || result?.stage?.key === "interview_completed");
@@ -56,7 +62,7 @@ export default function CandidateDashboardPage() {
 
   const isSelected = result?.shortlisted === true;
   const isRejected = result?.stage?.key === "rejected" || finalDecision === "rejected";
-  const isApplied = selectedJdId != null && hasResume;
+  const isApplied = Boolean(selectedApplication || result?.id);
   const isUnderReview = isApplied && !isSelected && !isRejected && !result?.stage?.key;
 
   async function loadDashboard(jobId) {
@@ -94,8 +100,10 @@ export default function CandidateDashboardPage() {
 
   async function handleApply(jdId, jdTitle) {
     if (!hasResume) {
-      setError("Please upload your resume first before applying");
-      announce("Please upload your resume first", "assertive");
+      const target = { id: jdId, title: jdTitle };
+      pendingApplyRef.current = target;
+      setPendingApplyJd(target);
+      fileInputRef.current?.click();
       return;
     }
     announce(`Applying for: ${jdTitle}`);
@@ -112,6 +120,7 @@ export default function CandidateDashboardPage() {
       }
       
       await loadDashboard(jdId);
+      await loadApplications();
     } catch (err) {
       setError(err.message);
       announce(`Error: ${err.message}`, "assertive");
@@ -140,11 +149,12 @@ export default function CandidateDashboardPage() {
     announce(`Applying to all ${jds.length} positions...`);
     try {
       for (const jd of jds) {
-        if (selectedJdId !== jd.id) {
+        if (!applicationsByJd.has(jd.id)) {
           await candidateApi.selectJd(jd.id);
         }
       }
       await loadDashboard(jds[0].id);
+      await loadApplications();
       setMessage(`Applied to all ${jds.length} positions`);
       announce(`Applied to all positions`);
     } catch (err) {
@@ -159,13 +169,29 @@ export default function CandidateDashboardPage() {
     setUploading(true);
     setError("");
     try {
+      const applyTarget = pendingApplyRef.current || pendingApplyJd;
       announce("Uploading resume...");
-      const response = await candidateApi.uploadResume(file, undefined);
+      const uploadJdId = applyTarget?.id ?? selectedJdId;
+      const response = await candidateApi.uploadResume(file, uploadJdId);
       setDashboard(prev => ({
         ...response,
-        results: prev?.results || {}
+        results: {
+          ...(prev?.results || {}),
+          ...(response.results || {}),
+          ...(uploadJdId ? { [uploadJdId]: response.result } : {}),
+        }
       }));
-      setMessage("Resume uploaded. Now apply to jobs you're interested in.");
+      if (Array.isArray(response.applications)) {
+        setApplications(response.applications);
+      }
+      if (applyTarget) {
+        setMessage(`Resume uploaded and checked against all positions. Applied to ${applyTarget.title}`);
+        pendingApplyRef.current = null;
+        setPendingApplyJd(null);
+      } else {
+        setMessage("Resume uploaded and checked against all positions");
+      }
+      await loadApplications();
       announce("Resume uploaded successfully");
     } catch (err) {
       setError(err.message);
@@ -206,6 +232,14 @@ export default function CandidateDashboardPage() {
           <p className="text-slate-500 dark:text-slate-400 mt-1">Track your application and interview progress.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <input
+            id="candidate-resume-upload"
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.txt"
+            className="hidden"
+            onChange={handleResumeUpload}
+          />
           {uploading ? (
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500">
               <Clock size={18} className="animate-spin" />
@@ -217,16 +251,9 @@ export default function CandidateDashboardPage() {
               <span className="text-sm font-medium">Resume Uploaded</span>
             </div>
           ) : (
-            <label className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium cursor-pointer transition-all">
+            <label htmlFor="candidate-resume-upload" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium cursor-pointer transition-all">
               <Upload size={18} />
               <span>Upload Resume</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.docx,.txt"
-                className="hidden"
-                onChange={handleResumeUpload}
-              />
             </label>
           )}
           {showStartInterview && (
@@ -286,10 +313,11 @@ export default function CandidateDashboardPage() {
             </div>
             <div className="p-8 space-y-6">
               {(dashboard?.available_jds || []).map((jd) => {
-                const isThisJobApplied = selectedJdId === jd.id && hasResume;
-                const jobResult = (dashboard.results && dashboard.results[jd.id]) || (isThisJobApplied ? result : null);
-                const isThisSelected = jobResult?.shortlisted === true;
-                const isThisRejected = jobResult?.stage?.key === "rejected" || jobResult?.final_decision === "rejected";
+                const application = applicationsByJd.get(jd.id);
+                const jobResult = (dashboard.results && dashboard.results[jd.id]) || (selectedJdId === jd.id ? result : null);
+                const isThisJobApplied = Boolean(application || jobResult?.id);
+                const isThisSelected = application?.status === "selected" || jobResult?.shortlisted === true;
+                const isThisRejected = application?.status === "rejected" || jobResult?.stage?.key === "rejected" || jobResult?.final_decision === "rejected";
                 const isThisUnderReview = isThisJobApplied && !isThisSelected && !isThisRejected && !jobResult?.stage?.key;
 
                 return (
@@ -341,20 +369,14 @@ export default function CandidateDashboardPage() {
                             Under Review
                           </span>
                         )
-                      ) : hasResume ? (
+                      ) : (
                         <button
                           onClick={() => handleApply(jd.id, jd.title)}
+                          disabled={uploading}
                           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all whitespace-nowrap"
                         >
                           Apply
                           <ArrowRight size={16} />
-                        </button>
-                      ) : (
-                        <button
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-500 font-bold whitespace-nowrap cursor-not-allowed"
-                          disabled
-                        >
-                          Upload Resume First
                         </button>
                       )}
                     </div>
