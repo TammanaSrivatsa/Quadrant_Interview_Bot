@@ -240,6 +240,14 @@ export const candidateApi = {
   dashboard: (jobId) => request({ method: "get", url: "/candidate/dashboard", params: jobId ? { job_id: jobId } : undefined }),
   jds: () => request({ method: "get", url: "/candidate/jds" }),
   selectJd: (jdId) => request({ method: "post", url: "/candidate/select-jd", data: { jd_id: jdId } }),
+  uploadResumeOnly: async (file) => {
+    const formData = new FormData();
+    formData.append("resume", file);
+    const response = await apiClient.post("/candidate/resume", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return unwrapApiBody(response.data);
+  },
   uploadResume: async (file, jobId, onProgress) => {
     try {
       console.log("[UPLOAD] Starting resume upload, file:", file?.name, "jobId:", jobId);
@@ -266,10 +274,13 @@ export const candidateApi = {
       throw err;
     }
   },
-  scheduleInterview: (resultId, interviewDate) => request({ method: "post", url: "/candidate/select-interview-date", data: { result_id: resultId, interview_date: interviewDate } }),
+  scheduleInterview: (resultId, interviewDate, interviewTime) => request({ method: "post", url: "/candidate/select-interview-date", data: { result_id: resultId, interview_date: interviewDate, interview_time: interviewTime } }),
+  notifications: () => request({ method: "get", url: "/candidate/notifications" }),
+  markNotificationsRead: () => request({ method: "post", url: "/candidate/notifications/read-all" }),
   regenerateQuestions: (resultId) => request({ method: "post", url: "/candidate/regenerate-questions", data: { result_id: resultId } }),
   practiceKit: (jobId) => request({ method: "get", url: "/candidate/practice-kit", params: jobId ? { job_id: jobId } : undefined }),
-  allResults: () => request({ method: "get", url: "/candidate/all-results" }),
+  applications: () => request({ method: "get", url: "/candidate/applications" }),
+  allResults: () => request({ method: "get", url: "/candidate/applications" }),
   
   // FAQ
   getQuestions: (status) => request({ method: "get", url: "/faq/questions", params: status ? { status } : undefined }),

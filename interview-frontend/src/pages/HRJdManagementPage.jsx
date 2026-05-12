@@ -75,6 +75,7 @@ function JdForm({ initialData, onSave, onCancel }) {
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [jdDictJson, setJdDictJson] = useState(initialData?.jd_dict_json || null);
   const isEdit = Boolean(initialData?.id);
 
   async function handleFileUpload(e) {
@@ -88,6 +89,7 @@ function JdForm({ initialData, onSave, onCancel }) {
       if (result.education_requirement) setEducationRequirement(result.education_requirement);
       if (result.experience_requirement != null) setExperienceRequirement(result.experience_requirement);
       if (result.min_academic_percent != null) setMinAcademicPercent(result.min_academic_percent);
+      if (result.jd_dict_json) setJdDictJson(result.jd_dict_json);
     } catch (err) { setError(err.message); }
     finally { setUploading(false); e.target.value = ""; }
   }
@@ -102,6 +104,7 @@ function JdForm({ initialData, onSave, onCancel }) {
       if (result.education_requirement) setEducationRequirement(result.education_requirement);
       if (result.experience_requirement != null) setExperienceRequirement(result.experience_requirement);
       if (result.min_academic_percent != null) setMinAcademicPercent(result.min_academic_percent);
+      if (result.jd_dict_json) setJdDictJson(result.jd_dict_json);
     } catch (err) { setError(err.message); }
     finally { setExtracting(false); }
   }
@@ -114,6 +117,7 @@ function JdForm({ initialData, onSave, onCancel }) {
       const payload = {
         title: title.trim(),
         jd_text: jdText.trim() || title,
+        jd_dict_json: jdDictJson,
         weights_json: skills,
         qualify_score: Number(qualifyScore),
         total_questions: Number(totalQuestions),

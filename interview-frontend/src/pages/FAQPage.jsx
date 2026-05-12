@@ -36,13 +36,13 @@ export default function FAQPage() {
     { question: "What skill weights should I use?", answer: "Set weights 1-10 for each required skill. Higher weight = more important for the role. The AI calculates match scores based on these weights." },
     { question: "How do I make a final decision?", answer: "Go to Interview Reviews → Select candidate → Mark as Selected/Rejected with notes. This updates the candidate's status in Pipeline." },
   ] : [
-    { question: "How do I upload my resume?", answer: "Go to your Dashboard, click the upload button, and select your resume file (PDF or DOCX). The AI will analyze it and give you a match score for each job." },
+    { question: "How do I upload my resume?", answer: "Go to All Jobs, click Upload Resume, and select your resume file (PDF, DOC, or DOCX). Your resume will be attached when you apply for a job." },
     { question: "How does resume scoring work?", answer: "We analyze your resume against the job description skills and requirements. Your score shows how well your skills match the position. Higher scores = better match." },
-    { question: "When will I get interview results?", answer: "After completing your interview, HR reviews your answers and scores. The decision appears in your Dashboard under 'My Results'. This usually takes 1-3 business days." },
-    { question: "Can I retake an interview?", answer: "Each job usually allows one interview attempt. Check your Dashboard - if an interview is marked 'Ready' or 'In Progress', you can start or resume it." },
-    { question: "How do I practice for interviews?", answer: "Go to your Dashboard and look for practice session options. You can practice with sample questions to improve your confidence before the real interview." },
+    { question: "When will my application status update?", answer: "After completing your interview, HR reviews your application. The decision appears under My Applications. This usually takes 1-3 business days." },
+    { question: "Can I retake an interview?", answer: "Each job usually allows one interview attempt. Check My Applications for your current status and next step." },
+    { question: "How do I practice for interviews?", answer: "Use the candidate interview flow when your application reaches the interview stage." },
     { question: "What do my scores mean?", answer: "Resume Score: How well your skills match the job. Interview Score: Your response quality during the interview. Final Score: Combined HR review. Scores above 65% are typically strong." },
-    { question: "How do I change my applied job?", answer: "On your Dashboard, use the job selector dropdown to switch between jobs you've applied to. Each job has its own resume and interview process." },
+    { question: "How do I apply to another job?", answer: "Open All Jobs, review a job description, and click Apply. Your uploaded resume will be attached automatically." },
     { question: "My resume won't upload - what should I do?", answer: "Make sure it's a PDF or DOCX file under 5MB. If it still fails, try a different file format or contact support." },
   ];
 

@@ -214,8 +214,8 @@ export default function PracticeInterviewPage() {
           <button type="button" onClick={loadPracticeKit} className="flex-1 flex items-center justify-center gap-2 py-4 border-2 border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
             <RotateCcw size={18} /><span>Practice Again</span>
           </button>
-          <Link to="/candidate" className="flex-1 flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all">
-            <span>Back to Dashboard</span><ArrowRight size={18} />
+          <Link to="/candidate/jobs" className="flex-1 flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all">
+            <span>Back to All Jobs</span><ArrowRight size={18} />
           </Link>
         </div>
       </div>
@@ -231,7 +231,7 @@ export default function PracticeInterviewPage() {
         <Brain size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <h3 className="text-xl font-bold text-slate-900 dark:text-white">No practice kit yet</h3>
         <p className="text-slate-500 dark:text-slate-400 mt-2">Upload a resume and select a JD from the candidate dashboard first.</p>
-        <Link to="/candidate" className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl">Go to Dashboard</Link>
+        <Link to="/candidate/jobs" className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl">Go to All Jobs</Link>
       </div>
     </div>
   );

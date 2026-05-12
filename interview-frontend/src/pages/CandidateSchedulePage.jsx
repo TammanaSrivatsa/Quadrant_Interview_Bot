@@ -133,9 +133,9 @@ export default function CandidateSchedulePage() {
         subtitle={selectedJd?.title || "Choose your interview date and time"}
         icon={Calendar}
         actions={(
-          <Link to="/candidate" className="subtle-button inline-flex items-center gap-2">
+          <Link to="/candidate/jobs" className="subtle-button inline-flex items-center gap-2">
             <ArrowLeft size={16} />
-            <span>Dashboard</span>
+            <span>All Jobs</span>
           </Link>
         )}
       />

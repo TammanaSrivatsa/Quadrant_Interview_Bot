@@ -13,7 +13,9 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import HRDashboardPage from "./pages/HRDashboardPage";
 import HRCandidatesPage from "./pages/HRCandidatesPage";
 import HRJdManagementPage from "./pages/HRJdManagementPage";
-import CandidateDashboardPage from "./pages/CandidateDashboardPage";
+import CandidateJobsPage from "./pages/CandidateJobsPage";
+import CandidateJobDetailsPage from "./pages/CandidateJobDetailsPage";
+import CandidateApplicationsPage from "./pages/CandidateApplicationsPage";
 import Completed from "./pages/Completed";
 import "./App.css";
 
@@ -28,7 +30,6 @@ const HRAnalyticsPage = lazy(() => import("./pages/HRAnalyticsPage"));
 const HRBackupPage = lazy(() => import("./pages/HRBackupPage"));
 const HRPipelinePage = lazy(() => import("./pages/HRPipelinePage"));
 const CandidateComparisonPage = lazy(() => import("./pages/CandidateComparisonPage"));
-const CandidateSchedulePage = lazy(() => import("./pages/CandidateSchedulePage"));
 
 function PageLoader() {
   return (
@@ -102,9 +103,11 @@ export default function App() {
 
         <Route element={<ProtectedRoute role="candidate" />}>
           <Route element={<DashboardLayout />}>
-            <Route path="/candidate" element={<CandidateDashboardPage />} />
-            <Route path="/candidate/schedule" element={<Suspense fallback={<PageLoader />}><CandidateSchedulePage /></Suspense>} />
-            <Route path="/interview/result" element={<Navigate to="/candidate" replace />} />
+            <Route path="/candidate" element={<Navigate to="/candidate/jobs" replace />} />
+            <Route path="/candidate/jobs" element={<CandidateJobsPage />} />
+            <Route path="/candidate/jobs/:jobId" element={<CandidateJobDetailsPage />} />
+            <Route path="/candidate/applications" element={<CandidateApplicationsPage />} />
+            <Route path="/interview/result" element={<Navigate to="/candidate/applications" replace />} />
           </Route>
         </Route>
 

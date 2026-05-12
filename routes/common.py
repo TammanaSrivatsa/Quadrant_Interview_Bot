@@ -347,12 +347,28 @@ def list_candidate_jds(db: Session) -> list[dict[str, object]]:
 def serialize_jd_list(jds) -> list[dict[str, object]]:
     payload: list[dict[str, object]] = []
     for jd in jds:
+        jd_meta = jd.jd_dict_json or {}
+        skills = jd.weights_json or jd.skill_scores or {}
+        company_name = getattr(getattr(jd, "company", None), "company_name", None) or "Unknown Company"
         payload.append(
             {
                 "id": jd.id,
                 "title": jd.title or jd.jd_title or "Untitled Role",
+                "company_name": company_name,
+                "company_logo": jd_meta.get("company_logo"),
+                "location": jd_meta.get("location") or jd_meta.get("job_location") or "Remote / Hybrid",
+                "job_type": jd_meta.get("job_type") or jd_meta.get("employment_type") or "Full-time",
+                "salary": jd_meta.get("salary") or jd_meta.get("salary_range") or jd_meta.get("stipend"),
+                "experience_level": jd_meta.get("experience_level") or (
+                    f"{int(jd.experience_requirement or 0)}+ years" if int(jd.experience_requirement or 0) > 0 else "Entry level"
+                ),
+                "short_description": jd_meta.get("short_description") or (jd.jd_text or "")[:220],
+                "responsibilities": jd_meta.get("responsibilities") or [],
+                "requirements": jd_meta.get("requirements") or [],
+                "benefits": jd_meta.get("benefits") or [],
+                "skills": list(skills.keys()) if isinstance(skills, dict) else [],
                 "jd_text": jd.jd_text,
-                "weights_json": jd.weights_json or jd.skill_scores or {},
+                "weights_json": skills,
                 "qualify_score": float(jd.qualify_score if jd.qualify_score is not None else 65.0),
                 "education_requirement": jd.education_requirement,
                 "experience_requirement": int(jd.experience_requirement if jd.experience_requirement is not None else 0),

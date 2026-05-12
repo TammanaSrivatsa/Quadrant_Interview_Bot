@@ -269,6 +269,7 @@ def _serialize_jd(jd: JobDescription) -> dict[str, object]:
         "id": jd.id,
         "title": jd.title or jd.jd_title or Path(jd.jd_text or "").name or "Untitled Role",
         "jd_text": jd.jd_text,
+        "jd_dict_json": jd.jd_dict_json,
         "weights_json": jd.weights_json or jd.skill_scores or {},
         "qualify_score": float(jd.qualify_score if jd.qualify_score is not None else 65.0),
         "education_requirement": jd.education_requirement,
@@ -302,6 +303,7 @@ def hr_create_jd(
         title=payload.title.strip(),
         jd_title=payload.title.strip(),
         jd_text=payload.jd_text.strip(),
+        jd_dict_json=payload.jd_dict_json,
         weights_json=_normalize_weight_map(payload.weights_json),
         skill_scores=_normalize_weight_map(payload.weights_json),
         qualify_score=float(payload.qualify_score),
@@ -1284,8 +1286,20 @@ def upload_jd(
     extracted_experience = requirements.get("experience_requirement") or years
     extracted_min_percent = requirements.get("min_academic_percent") or 0
 
+    jd_meta = {
+        "company_name": requirements.get("company_name"),
+        "location": requirements.get("location"),
+        "employment_type": requirements.get("employment_type"),
+        "salary": requirements.get("salary"),
+        "job_title": requirements.get("job_title"),
+        "short_description": requirements.get("description", "")[:220],
+        "responsibilities": requirements.get("responsibilities", []),
+        "requirements": requirements.get("requirements", []),
+        "benefits": requirements.get("benefits", []),
+    }
+
     request.session["temp_jd"] = {
-        "jd_title": jd_title.strip() if jd_title else None,
+        "jd_title": jd_title.strip() if jd_title else (requirements.get("job_title") or None),
         "jd_path": str(jd_path),
         "jd_raw_text": jd_raw_text[:8000],
         "gender_requirement": None,
@@ -1295,6 +1309,7 @@ def upload_jd(
         "question_count": questions,
         "project_question_ratio": ratio,
         "min_academic_percent": extracted_min_percent,
+        "jd_dict_json": jd_meta,
     }
 
     return {
@@ -1309,6 +1324,7 @@ def upload_jd(
         "education_requirement": extracted_education,
         "experience_requirement": extracted_experience,
         "min_academic_percent": extracted_min_percent,
+        "jd_dict_json": jd_meta,
     }
 
 
@@ -1327,14 +1343,27 @@ def parse_jd_text(
     if not ai_skills:
         ai_skills = {"Add skills manually": 5}
 
+    jd_meta = {
+        "company_name": requirements.get("company_name"),
+        "location": requirements.get("location"),
+        "employment_type": requirements.get("employment_type"),
+        "salary": requirements.get("salary"),
+        "job_title": requirements.get("job_title"),
+        "short_description": requirements.get("description", "")[:220],
+        "responsibilities": requirements.get("responsibilities", []),
+        "requirements": requirements.get("requirements", []),
+        "benefits": requirements.get("benefits", []),
+    }
+
     return {
         "ok": True,
-        "jd_title": jd_title.strip() or None,
+        "jd_title": jd_title.strip() or (requirements.get("job_title") or None),
         "jd_text": jd_text[:500],
         "ai_skills": ai_skills,
         "education_requirement": requirements.get("education_requirement"),
         "experience_requirement": requirements.get("experience_requirement", 0),
         "min_academic_percent": requirements.get("min_academic_percent", 0),
+        "jd_dict_json": jd_meta,
     }
 
 

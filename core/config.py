@@ -2,8 +2,13 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load environment variables once at startup
-load_dotenv()
+# Load environment variables once at startup.
+# python-dotenv auto-loads ".env", but this project has historically used
+# "env" for local settings, so support both names explicitly.
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+if not (BASE_DIR / ".env").exists():
+    load_dotenv(BASE_DIR / "env")
 
 class Config:
     # Environment and CORS
@@ -63,7 +68,6 @@ class Config:
     # ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
 
     # Paths
-    BASE_DIR = Path(__file__).resolve().parent.parent
     UPLOAD_DIR = BASE_DIR / "uploads"
 
     # S3 Configuration (for proctoring, PDF, and Polly TTS via Lambda)

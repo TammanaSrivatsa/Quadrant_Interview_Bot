@@ -217,8 +217,8 @@ export default function Completed() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-          <button onClick={() => navigate("/candidate")} className="w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm"><Home size={20} /><span>Go to Dashboard</span></button>
-          <button onClick={() => navigate("/interview/result")} className="w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-lg shadow-blue-200 dark:shadow-none transition-all group"><BarChart3 size={20} /><span>View Application Status</span><ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></button>
+          <button onClick={() => navigate("/candidate/jobs")} className="w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm"><Home size={20} /><span>Go to All Jobs</span></button>
+          <button onClick={() => navigate("/candidate/applications")} className="w-full sm:w-auto flex items-center justify-center space-x-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-lg shadow-blue-200 dark:shadow-none transition-all group"><BarChart3 size={20} /><span>View Application Status</span><ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></button>
         </div>
       </div>
     </div>

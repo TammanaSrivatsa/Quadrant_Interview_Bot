@@ -4,6 +4,7 @@ import logging
 import secrets
 import shutil
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -13,7 +14,7 @@ from services.question_generation import build_question_bundle
 from ai_engine.phase1.scoring import compute_resume_skill_match
 from ai_engine.phase1.matching import extract_text_from_file
 from database import get_db
-from models import InterviewSession, JobDescription, Result
+from models import ApplicationStageHistory, InterviewSession, JobDescription, Result, UserPreferences
 from core.config import config
 from routes.common import (
     UPLOAD_DIR,
@@ -86,25 +87,86 @@ def _resume_advice_payload(
 
 
 def _application_status(result: Result) -> str:
-    if str(result.stage or "").lower() == "rejected" or str(result.hr_decision or "").lower() == "rejected":
-        return "rejected"
-    if result.shortlisted or str(result.hr_decision or "").lower() == "selected":
-        return "selected"
-    if result.score is not None:
-        return "rejected"
-    return "under_review"
+    stage = str(result.stage or "").strip().lower()
+    decision = str(result.hr_decision or "").strip().lower()
+    if stage == "rejected" or decision == "rejected":
+        return "Rejected"
+    if decision == "selected" or stage == "selected":
+        return "Selected"
+    if stage == "interview_scheduled" or result.interview_date or result.interview_datetime:
+        return "Interview Scheduled"
+    if result.shortlisted or stage == "shortlisted":
+        return "Shortlisted"
+    if stage in {"screening", "under_review", "interview_completed"} or result.score is not None:
+        return "Under Review"
+    return "Applied"
 
 
 def _application_payload(result: Result, jd_info: dict[str, object] | None = None) -> dict[str, object]:
     applied_at = result.stage_updated_at or getattr(result, "interview_datetime", None)
     jd_info = jd_info or {}
+    job = result.job
+    title = (
+        getattr(job, "title", None)
+        or getattr(job, "jd_title", None)
+        or jd_info.get("title")
+        or "Unknown Role"
+    )
+    company = (
+        getattr(getattr(job, "company", None), "company_name", None)
+        or jd_info.get("company_name")
+        or "Unknown Company"
+    )
+    updated_at = result.stage_updated_at or applied_at
     return {
+        "id": result.application_id or f"APP-{result.id}",
+        "applicationId": result.application_id or f"APP-{result.id}",
+        "resultId": result.id,
         "jd_id": result.job_id,
-        "jd_title": jd_info.get("title", "Unknown Role"),
+        "jobId": result.job_id,
+        "jd_title": title,
+        "jobTitle": title,
+        "company": company,
         "jd_qualify_score": jd_info.get("qualify_score"),
         "status": _application_status(result),
+        "message": result.hr_notes or None,
         "applied_at": applied_at.isoformat() if applied_at else None,
+        "appliedDate": applied_at.date().isoformat() if applied_at else None,
+        "updatedAt": updated_at.date().isoformat() if updated_at else None,
+        "lastUpdated": updated_at.isoformat() if updated_at else None,
     }
+
+
+def _application_timeline(db: Session, result: Result) -> list[dict[str, object]]:
+    history = (
+        db.query(ApplicationStageHistory)
+        .filter(ApplicationStageHistory.result_id == result.id)
+        .order_by(ApplicationStageHistory.created_at.asc(), ApplicationStageHistory.id.asc())
+        .all()
+    )
+    return [
+        {
+            "status": _stage_label(item.stage),
+            "note": item.note,
+            "createdAt": item.created_at.isoformat() if item.created_at else None,
+        }
+        for item in history
+    ]
+
+
+def _stage_label(stage: str | None) -> str:
+    key = str(stage or "").strip().lower()
+    labels = {
+        "applied": "Applied",
+        "screening": "Under Review",
+        "under_review": "Under Review",
+        "shortlisted": "Shortlisted",
+        "interview_scheduled": "Interview Scheduled",
+        "interview_completed": "Under Review",
+        "selected": "Selected",
+        "rejected": "Rejected",
+    }
+    return labels.get(key, "Applied")
 
 
 def _screen_candidate_against_jobs(
@@ -207,12 +269,72 @@ def candidate_jds(
     }
 
 
-@router.get("/candidate/all-results")
-def candidate_all_results(
+@router.post("/candidate/resume")
+def upload_candidate_resume(
+    resume: UploadFile = File(...),
     current_user: SessionUser = Depends(require_role("candidate")),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    """Return results for all JDs the candidate has applied to (safe data - no scores)."""
+    """Store or replace the candidate resume without creating applications."""
+    candidate = get_candidate_or_404(db, current_user.user_id)
+    profile_changed = ensure_candidate_profile(candidate, db)
+    safe_filename = Path(resume.filename or "resume").name
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Resume filename is invalid")
+
+    allowed_extensions = {".pdf", ".doc", ".docx"}
+    file_ext = Path(safe_filename).suffix.lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{file_ext}'. Allowed: {', '.join(sorted(allowed_extensions))}")
+
+    resume.file.seek(0, 2)
+    file_size = resume.file.tell()
+    resume.file.seek(0)
+    max_size_bytes = config.MAX_UPLOAD_SIZE_MB * 1_000_000
+    if file_size > max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"Resume file exceeds {config.MAX_UPLOAD_SIZE_MB}MB limit")
+
+    resume_path = UPLOAD_DIR / f"resume_{candidate.id}_{uuid.uuid4().hex}_{safe_filename}"
+    try:
+        with resume_path.open("wb") as buffer:
+            shutil.copyfileobj(resume.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+
+    resume_text = extract_text_from_file(resume_path)
+    if not resume_text:
+        resume_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Resume text could not be extracted. Please upload a valid PDF, DOC, or DOCX file.")
+
+    candidate.resume_path = str(resume_path)
+    candidate.resume_text = resume_text
+    if profile_changed:
+        db.add(candidate)
+    db.commit()
+    db.refresh(candidate)
+
+    return {
+        "ok": True,
+        "message": "Resume uploaded successfully.",
+        "uploaded_resume": safe_filename,
+        "candidate": {
+            "id": candidate.id,
+            "candidate_uid": candidate.candidate_uid,
+            "name": candidate.name,
+            "email": candidate.email,
+            "gender": candidate.gender,
+            "resume_path": candidate.resume_path,
+            "created_at": candidate.created_at,
+        },
+    }
+
+
+@router.get("/candidate/applications")
+def candidate_applications(
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Return application history for the candidate without exposing test scores."""
     candidate = get_candidate_or_404(db, current_user.user_id)
     if ensure_candidate_profile(candidate, db):
         db.commit()
@@ -231,13 +353,24 @@ def candidate_all_results(
     applications = []
     for r in results:
         jd_info = jd_map.get(r.job_id, {})
-        applications.append(_application_payload(r, jd_info))
+        payload = _application_payload(r, jd_info)
+        payload["timeline"] = _application_timeline(db, r)
+        applications.append(payload)
 
     return {
         "ok": True,
         "applications": applications,
         "available_jds": available_jds,
     }
+
+
+@router.get("/candidate/all-results")
+def candidate_all_results(
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Compatibility alias for older frontend builds."""
+    return candidate_applications(current_user=current_user, db=db)
 
 
 @router.post("/candidate/select-jd")
@@ -311,6 +444,166 @@ def candidate_select_jd(
         },
         "result": result_data,
     }
+
+
+def _get_notification_preferences(current_user, db: Session) -> UserPreferences | None:
+    return db.query(UserPreferences).filter(
+        UserPreferences.user_id == current_user.user_id,
+        UserPreferences.role == current_user.role,
+    ).first()
+
+
+def _parse_iso_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _format_notification_timestamp(dt: datetime | None) -> str | None:
+    if not dt:
+        return None
+    return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _build_candidate_notifications(db: Session, candidate) -> list[dict[str, object]]:
+    notifications: list[dict[str, object]] = []
+    now = datetime.utcnow()
+
+    recent_jobs = (
+        db.query(JobDescription)
+        .filter(JobDescription.is_active == True)
+        .order_by(JobDescription.created_at.desc())
+        .limit(4)
+        .all()
+    )
+    for job in recent_jobs:
+        if job.created_at and (now - job.created_at) <= timedelta(days=7):
+            notifications.append(
+                {
+                    "id": f"job-posted-{job.id}",
+                    "type": "jobs",
+                    "message": f"New role posted: {job.title}",
+                    "timestamp": _format_notification_timestamp(job.created_at),
+                    "href": f"/candidate/jobs/{job.id}",
+                }
+            )
+
+    results = (
+        db.query(Result)
+        .filter(Result.candidate_id == candidate.id)
+        .order_by(Result.stage_updated_at.desc(), Result.id.desc())
+        .all()
+    )
+
+    for result in results:
+        job_title = getattr(getattr(result, 'job', None), 'title', 'this role')
+        if result.interview_datetime or result.interview_date:
+            notify_date = result.interview_datetime or result.stage_updated_at or now
+            notifications.append(
+                {
+                    "id": f"interview-scheduled-{result.id}",
+                    "type": "interview",
+                    "message": f"Interview scheduled for {job_title} on {result.interview_date or _format_notification_timestamp(result.interview_datetime)}.",
+                    "timestamp": _format_notification_timestamp(result.interview_datetime or result.stage_updated_at),
+                    "href": "/candidate/applications",
+                    "result_id": result.id,
+                }
+            )
+        elif result.shortlisted:
+            notifications.append(
+                {
+                    "id": f"shortlisted-{result.id}",
+                    "type": "shortlisted",
+                    "message": f"Your application for {job_title} has been shortlisted.",
+                    "timestamp": _format_notification_timestamp(result.stage_updated_at or now),
+                    "href": "/candidate/applications",
+                    "result_id": result.id,
+                }
+            )
+
+        if str(result.hr_decision or "").strip().lower() == "rejected" or str(result.stage or "").strip().lower() == "rejected":
+            notifications.append(
+                {
+                    "id": f"rejected-{result.id}",
+                    "type": "rejected",
+                    "message": f"Your application for {job_title} was not shortlisted this time.",
+                    "timestamp": _format_notification_timestamp(result.stage_updated_at or now),
+                    "href": "/candidate/applications",
+                    "result_id": result.id,
+                }
+            )
+
+    deduped: dict[str, dict[str, object]] = {}
+    for item in notifications:
+        existing = deduped.get(item["id"])
+        if not existing or item["timestamp"] and existing["timestamp"] < item["timestamp"]:
+            deduped[item["id"]] = item
+
+    sorted_notifications = sorted(
+        deduped.values(),
+        key=lambda item: _parse_iso_timestamp(item.get("timestamp")) or now,
+        reverse=True,
+    )
+    return sorted_notifications[:8]
+
+
+@router.get("/candidate/notifications")
+def candidate_notifications(
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    candidate = get_candidate_or_404(db, current_user.user_id)
+    if ensure_candidate_profile(candidate, db):
+        db.commit()
+        db.refresh(candidate)
+
+    preferences = _get_notification_preferences(current_user, db)
+    last_read_at = _parse_iso_timestamp(
+        preferences.preferences_json.get("notification_last_read_at") if preferences and preferences.preferences_json else None
+    )
+
+    notifications = _build_candidate_notifications(db, candidate)
+    unread_count = sum(1 for n in notifications if not last_read_at or _parse_iso_timestamp(n.get("timestamp")) > last_read_at)
+
+    return {
+        "ok": True,
+        "notifications": [
+            {
+                **n,
+                "read": bool(last_read_at and _parse_iso_timestamp(n.get("timestamp")) <= last_read_at),
+            }
+            for n in notifications
+        ],
+        "unread_count": unread_count,
+        "last_read_at": _format_notification_timestamp(last_read_at),
+    }
+
+
+@router.post("/candidate/notifications/read-all")
+def candidate_mark_notifications_read(
+    current_user: SessionUser = Depends(require_role("candidate")),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    preferences = _get_notification_preferences(current_user, db)
+    timestamp = _format_notification_timestamp(datetime.utcnow())
+    if preferences:
+        prefs = preferences.preferences_json or {}
+        prefs["notification_last_read_at"] = timestamp
+        preferences.preferences_json = prefs
+        preferences.updated_at = datetime.utcnow()
+    else:
+        preferences = UserPreferences(
+            user_id=current_user.user_id,
+            role=current_user.role,
+            preferences_json={"notification_last_read_at": timestamp},
+        )
+        db.add(preferences)
+    db.commit()
+
+    return {"ok": True, "last_read_at": timestamp}
 
 
 @router.get("/candidate/skill-match/{job_id}")

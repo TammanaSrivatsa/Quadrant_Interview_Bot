@@ -283,36 +283,66 @@ def evaluate_answer_detailed(**kwargs) -> dict[str, Any]:
         return {"score": 50, "feedback": "Evaluation failed."}
 
 def extract_jd_requirements(jd_text: str) -> dict[str, Any]:
-    """Extract structured requirements from JD text: skills + education + experience + min academic %."""
+    """Extract structured requirements from JD text: all fields for auto-population."""
     prompt = (
-        "Analyze the job description below and extract structured requirements. "
+        "Analyze the job description below and extract structured details. "
         "Return ONLY a JSON object with these exact keys:\n\n"
-        "1. 'skills': Object with skill names as keys and importance weight (1-10) as values. "
+        "1. 'job_title': String - the exact job title from the JD (e.g. 'Backend Engineer', 'Data Scientist'). "
+        "   Return null if not clearly stated.\n\n"
+        "2. 'company_name': String - the company name from the JD. Return null if not clearly stated.\n\n"
+        "3. 'description': String - a short 1-3 sentence summary of the role and what it involves.\n\n"
+        "4. 'skills': Object with skill names as keys and importance weight (1-10) as values. "
         "   Include ONLY hard technical skills (languages, frameworks, databases, cloud, DevOps). "
         "   Ignore soft skills, methodologies, company info.\n\n"
-        "2. 'education_requirement': String - one of: 'bachelor', 'master', 'phd', or null if not specified.\n\n"
-        "3. 'experience_requirement': Integer - minimum years of experience or 0 if not specified.\n\n"
-        "4. 'min_academic_percent': Integer - minimum academic percentage or 0 if not specified.\n\n"
+        "5. 'education_requirement': String - one of: 'bachelor', 'master', 'phd', or null if not specified.\n\n"
+        "6. 'experience_requirement': Integer - minimum years of experience or 0 if not specified.\n\n"
+        "7. 'min_academic_percent': Integer - minimum academic percentage or 0 if not specified.\n\n"
+        "8. 'salary': String - the salary or package information (e.g. '12-18 LPA', '$80k-$120k'). "
+        "   Return null if not mentioned.\n\n"
+        "9. 'location': String - job location (e.g. 'Bangalore', 'Remote', 'Hybrid', 'New York'). "
+        "   Return null if not specified.\n\n"
+        "10. 'employment_type': String - employment type (e.g. 'Full-time', 'Part-time', 'Contract', "
+        "   'Internship', 'Remote'). Return null if not specified.\n\n"
+        "11. 'responsibilities': Array of strings - key responsibilities mentioned in the JD (max 6 items). "
+        "    Empty array if none.\n\n"
+        "12. 'requirements': Array of strings - key requirements/qualifications (max 6 items). "
+        "    Empty array if none.\n\n"
+        "13. 'benefits': Array of strings - benefits/perks mentioned (max 4 items). "
+        "    Empty array if none.\n\n"
         "RULES:\n"
         "- For education: look for 'B.Tech', 'BE', 'Bachelor', 'B.Sc' = 'bachelor'. "
         "'M.Tech', 'Master', 'M.Sc' = 'master'. 'PhD', 'doctorate' = 'phd'. Otherwise null.\n"
         "- For experience: look for patterns like '3+ years', '3 years', 'minimum 5 years'. Extract the number.\n"
         "- For min %: look for patterns like 'minimum 60%', '65% aggregate', '60 percent'. Extract the number.\n"
-        "- If any field is not clearly stated, use null for education or 0 for numbers.\n\n"
+        "- If any field is not clearly stated, use null for strings or 0 for numbers or [] for arrays.\n\n"
         f"Job Description:\n{jd_text[:4000]}"
     )
     try:
-        resp = _get_client().create(messages=[{"role": "user", "content": prompt}], temperature=0.1, max_tokens=500)
+        resp = _get_client().create(messages=[{"role": "user", "content": prompt}], temperature=0.1, max_tokens=800)
         result = json.loads(_clean_json(resp.choices[0].message.content))
         return {
+            "job_title": result.get("job_title"),
+            "company_name": result.get("company_name"),
+            "description": result.get("description", ""),
             "skills": result.get("skills", {}),
             "education_requirement": result.get("education_requirement"),
             "experience_requirement": result.get("experience_requirement", 0),
             "min_academic_percent": result.get("min_academic_percent", 0),
+            "salary": result.get("salary"),
+            "location": result.get("location"),
+            "employment_type": result.get("employment_type"),
+            "responsibilities": result.get("responsibilities", []),
+            "requirements": result.get("requirements", []),
+            "benefits": result.get("benefits", []),
         }
     except Exception as e:
         logger.error(f"extract_jd_requirements failed: {e}")
-        return {"skills": {}, "education_requirement": None, "experience_requirement": 0, "min_academic_percent": 0}
+        return {
+            "job_title": None, "company_name": None, "description": "",
+            "skills": {}, "education_requirement": None, "experience_requirement": 0,
+            "min_academic_percent": 0, "salary": None, "location": None,
+            "employment_type": None, "responsibilities": [], "requirements": [], "benefits": [],
+        }
 
 
 def score_answer(question: str, answer: str) -> dict[str, Any]:

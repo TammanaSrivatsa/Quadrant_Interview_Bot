@@ -1,12 +1,14 @@
 import React, { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import HelpSupportButton from "../components/HelpSupportButton";
 
 export default function DashboardLayout() {
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : true));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const showHelp = !location.pathname.startsWith("/candidate");
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 font-sans">
@@ -39,7 +41,7 @@ export default function DashboardLayout() {
           </div>
         </main>
       </div>
-      <HelpSupportButton supportEmail="support@quadranttech.com" />
+      {showHelp && <HelpSupportButton supportEmail="support@quadranttech.com" />}
     </div>
   );
 }

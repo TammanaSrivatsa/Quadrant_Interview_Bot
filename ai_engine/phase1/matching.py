@@ -1,5 +1,7 @@
 import re
 import logging
+import shutil
+import subprocess
 from threading import Lock
 
 from typing import Any
@@ -77,6 +79,42 @@ def extract_text_from_file(file_path):
                 text = re.sub(r'[\x00-\x1F\x7F]+', '', text)
                 return text
             except Exception as e:
+                return ""
+
+        elif file_path.endswith(".doc"):
+            try:
+                import textract
+                text = textract.process(file_path).decode("utf-8", errors="ignore")
+                text = re.sub(r'\n{3,}', '\n\n', text)
+                text = re.sub(r'[\x00-\x1F\x7F]+', '', text)
+                return text
+            except Exception:
+                pass
+
+            antiword = shutil.which("antiword")
+            if antiword:
+                try:
+                    completed = subprocess.run(
+                        [antiword, file_path],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    if completed.stdout.strip():
+                        text = re.sub(r'\n{3,}', '\n\n', completed.stdout)
+                        text = re.sub(r'[\x00-\x1F\x7F]+', '', text)
+                        return text
+                except Exception:
+                    pass
+
+            try:
+                with open(file_path, "rb") as f:
+                    text = f.read().decode("latin-1", errors="ignore")
+                    text = re.sub(r'[\x00-\x1F\x7F]+', ' ', text)
+                    text = re.sub(r'\s{3,}', ' ', text).strip()
+                    return text
+            except Exception:
                 return ""
 
         elif file_path.endswith(".txt"):

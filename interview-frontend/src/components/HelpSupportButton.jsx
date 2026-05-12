@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { useLocation, Link } from "react-router-dom";
-import { HelpCircle, X, Mail, ExternalLink, Lightbulb, FileText, Upload, Calendar, Users, BarChart3, Settings, CheckCircle2 } from "lucide-react";
+import { HelpCircle, X, Mail, FileText, Upload, Calendar, Users, BarChart3, Settings, CheckCircle2, BriefcaseBusiness } from "lucide-react";
 
 const helpTips = {
   // Candidate pages
-  "/candidate": {
+  "/candidate/jobs": {
     tips: [
       { icon: Upload, text: "Upload your resume in PDF or DOCX format" },
       { icon: FileText, text: "Select a job to see matching resume score" },
       { icon: Calendar, text: "Schedule your interview after being shortlisted" },
     ],
   },
-  "/interview/result": {
+  "/candidate/applications": {
     tips: [
-      { icon: BarChart3, text: "Check your application status here" },
-      { icon: CheckCircle2, text: "Review feedback to improve next time" },
+      { icon: BriefcaseBusiness, text: "Track every submitted job application" },
+      { icon: CheckCircle2, text: "Review recruiter messages and status updates" },
     ],
   },
   "/settings": {
@@ -63,8 +63,8 @@ const helpTips = {
 };
 
 const pageNames = {
-  "/candidate": "Dashboard",
-  "/interview/result": "My Results",
+  "/candidate/jobs": "All Jobs",
+  "/candidate/applications": "My Applications",
   "/settings": "Settings",
   "/hr": "Dashboard",
   "/hr/candidates": "Candidates",
