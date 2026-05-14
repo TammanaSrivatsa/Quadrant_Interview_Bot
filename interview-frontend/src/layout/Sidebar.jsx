@@ -7,6 +7,7 @@ import {
   Columns3,
   Download,
   FileText,
+  FileSearch,
   LayoutDashboard,
   LayoutGrid,
   LogOut,
@@ -29,6 +30,7 @@ export default function Sidebar({ isOpen = true, onClose, collapsed = false, onM
     { name: "Score Matrix",      path: "/hr/matrix",      icon: LayoutGrid },
     { name: "Interview Reviews", path: "/hr/interviews",  icon: ClipboardList },
     { name: "Analytics",         path: "/hr/analytics",   icon: BarChart3 },
+    { name: "Resume Analysis",   path: "/hr/resume-analysis", icon: FileSearch },
     { name: "Backup",            path: "/hr/backup",      icon: Download },
     { name: "Settings",          path: "/settings",       icon: Settings },
   ];
@@ -49,9 +51,9 @@ export default function Sidebar({ isOpen = true, onClose, collapsed = false, onM
   }
 
   const activeClass =
-    "bg-slate-100 text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white";
+    "bg-slate-100 text-slate-950 shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-800 dark:text-white dark:ring-slate-700";
   const inactiveClass =
-    "text-slate-500 border-transparent hover:border-slate-200 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-white";
+    "text-slate-500 border-transparent hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-white";
 
   return (
     <>
@@ -59,13 +61,13 @@ export default function Sidebar({ isOpen = true, onClose, collapsed = false, onM
       <nav
         aria-label={`${isHR ? "HR" : "Candidate"} navigation menu`}
         className={cn(
-          "h-screen bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed left-0 top-0 z-50 transition-all duration-300 ease-out lg:hidden",
+          "h-screen bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800 flex flex-col fixed left-0 top-0 z-50 transition-all duration-300 ease-out lg:hidden",
           isOpen ? "translate-x-0 w-64" : "-translate-x-full w-64"
         )}
       >
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-100 dark:border-slate-800">
-          <div className="bg-blue-600 p-1.5 rounded-lg flex-shrink-0" aria-hidden="true">
+        <div className="flex h-16 items-center gap-2.5 px-5 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-200 dark:shadow-blue-950/40 flex-shrink-0" aria-hidden="true">
             <Video className="text-white w-5 h-5" />
           </div>
           <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
@@ -139,18 +141,18 @@ export default function Sidebar({ isOpen = true, onClose, collapsed = false, onM
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
         className={cn(
-          "hidden lg:flex h-screen bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed left-0 top-0 z-50 transition-all duration-300 ease-out",
-          collapsed ? "w-16" : "w-64"
+          "hidden lg:flex h-screen bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800 flex-col fixed left-0 top-0 z-50 transition-all duration-300 ease-out",
+          collapsed ? "w-[68px]" : "w-[260px]"
         )}
       >
         {/* Logo */}
         <div
           className={cn(
-            "flex items-center border-b border-slate-100 dark:border-slate-800 transition-all duration-300",
-            collapsed ? "justify-center px-3 py-4" : "gap-2.5 px-5 py-5"
+            "flex h-16 items-center border-b border-slate-100 dark:border-slate-800 transition-all duration-300",
+            collapsed ? "justify-center px-3" : "gap-2.5 px-5"
           )}
         >
-          <div className="bg-blue-600 p-1.5 rounded-lg flex-shrink-0" aria-hidden="true">
+          <div className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-200 dark:shadow-blue-950/40 flex-shrink-0" aria-hidden="true">
             <Video className="text-white w-5 h-5" />
           </div>
           <span
@@ -164,7 +166,7 @@ export default function Sidebar({ isOpen = true, onClose, collapsed = false, onM
         </div>
 
         {/* Nav Links */}
-        <ul className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto" role="list">
+        <ul className="flex-1 px-2 py-4 space-y-1 overflow-y-auto" role="list">
           {links.map((link) => (
             <li key={link.path}>
               <NavLink

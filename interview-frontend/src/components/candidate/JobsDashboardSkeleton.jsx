@@ -1,24 +1,24 @@
 export default function JobsDashboardSkeleton() {
   return (
-    <div className="space-y-6">
-      {/* Header skeleton */}
-      <div className="h-36 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_116px_116px]">
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      </div>
 
-      {/* Filter bar skeleton */}
       <div className="h-16 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
 
-      {/* Section heading skeleton */}
       <div className="flex items-center gap-3">
         <div className="h-5 w-40 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
         <div className="h-4 w-24 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
       </div>
 
-      {/* Job cards skeleton — mirrors the full-width grid */}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {Array.from({ length: 8 }).map((_, index) => (
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={index}
-            className="h-72 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800"
+            className="h-28 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800"
           />
         ))}
       </div>

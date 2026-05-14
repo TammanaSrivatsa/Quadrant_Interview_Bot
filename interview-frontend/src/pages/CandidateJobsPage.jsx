@@ -198,9 +198,9 @@ export default function CandidateJobsPage() {
   return (
     <div className="space-y-5 page-enter">
       {/* ── Header: All Jobs Banner + 2 Stat Cards ── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_auto]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_116px_116px]">
         {/* Banner */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 p-6 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900/30">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 p-6 text-white shadow-xl shadow-blue-200/70 dark:shadow-blue-900/30 sm:p-7">
           {/* Background decoration */}
           <div
             aria-hidden="true"
@@ -295,7 +295,7 @@ export default function CandidateJobsPage() {
       )}
 
       {/* ── Search & Filters ── */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_200px_200px]">
           {/* Keyword search */}
           <label className="relative block" aria-label="Search by keyword or job title">
@@ -307,8 +307,8 @@ export default function CandidateJobsPage() {
             <input
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="Search by keyword or job title…"
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder-slate-500 dark:focus:ring-blue-950"
+              placeholder="Search by keyword or job title..."
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder-slate-500 dark:focus:ring-blue-950"
             />
           </label>
 
@@ -323,7 +323,7 @@ export default function CandidateJobsPage() {
               value={filterJobType}
               onChange={(e) => setFilterJobType(e.target.value)}
               aria-label="Filter by job type"
-              className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-8 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950"
+              className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-8 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950"
             >
               <option value="">All Job Types</option>
               {(uniqueJobTypes.length ? uniqueJobTypes : JOB_TYPES).map((type) => (
@@ -350,7 +350,7 @@ export default function CandidateJobsPage() {
               value={filterLocation}
               onChange={(e) => setFilterLocation(e.target.value)}
               aria-label="Filter by location"
-              className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-8 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950"
+              className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-8 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950"
             >
               <option value="">All Locations</option>
               {uniqueLocations.map((loc) => (
@@ -395,11 +395,11 @@ export default function CandidateJobsPage() {
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-lg font-black text-slate-950 dark:text-white">
-            {visibleJobs.length}{" "}
-            <span className="font-semibold text-slate-500">
-              job{visibleJobs.length !== 1 ? "s" : ""} found
-            </span>
+            Open Opportunities
           </h2>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            {visibleJobs.length} job{visibleJobs.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
         {visibleJobs.length > 0 ? (
@@ -475,7 +475,7 @@ export default function CandidateJobsPage() {
 
 function StatCard({ value, label, accent }) {
   return (
-    <div className="flex min-w-[120px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 transition hover:shadow-md hover:-translate-y-0.5">
+    <div className="flex min-h-40 min-w-[116px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
       <span className={`text-4xl font-black leading-none ${accent}`}>
         {value}
       </span>

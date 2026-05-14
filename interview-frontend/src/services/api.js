@@ -318,6 +318,18 @@ export const hrApi = {
   },
   confirmJd: (payload) => request({ method: "post", url: "/hr/confirm-jd", data: payload }),
   updateSkillWeights: (payload) => request({ method: "post", url: "/hr/update-skill-weights", data: payload }),
+  resumeAnalysisCandidates: (jdId, params = {}) => request({ method: "get", url: `/hr/resume-analysis/${jdId}/candidates`, params }),
+  resumeAnalysisDetail: (candidateUid, jdId) => request({ method: "get", url: `/hr/resume-analysis/candidates/${candidateUid}`, params: jdId ? { jd_id: jdId } : undefined }),
+  uploadResumeAnalysis: async (jdId, files, onProgress) => {
+    const formData = new FormData();
+    Array.from(files || []).forEach((file) => formData.append("resumes", file));
+    const response = await apiClient.post(`/hr/resume-analysis/${jdId}/resumes`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress: onProgress,
+      timeout: 300000,
+    });
+    return unwrapApiBody(response.data);
+  },
 
   // Candidates
   candidacy: (params = {}) => {

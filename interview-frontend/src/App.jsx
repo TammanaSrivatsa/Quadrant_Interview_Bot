@@ -29,6 +29,7 @@ const HRJdDetailPage = lazy(() => import("./pages/HRJdDetailPage"));
 const HRAnalyticsPage = lazy(() => import("./pages/HRAnalyticsPage"));
 const HRBackupPage = lazy(() => import("./pages/HRBackupPage"));
 const HRPipelinePage = lazy(() => import("./pages/HRPipelinePage"));
+const HRResumeAnalysisPage = lazy(() => import("./pages/HRResumeAnalysisPage"));
 const CandidateComparisonPage = lazy(() => import("./pages/CandidateComparisonPage"));
 
 function PageLoader() {
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="/hr/interviews/:id" element={<Suspense fallback={<PageLoader />}><HRInterviewDetailPage /></Suspense>} />
             <Route path="/hr/matrix" element={<Suspense fallback={<PageLoader />}><HRScoreMatrixPage /></Suspense>} />
             <Route path="/hr/analytics" element={<Suspense fallback={<PageLoader />}><HRAnalyticsPage /></Suspense>} />
+            <Route path="/hr/resume-analysis" element={<Suspense fallback={<PageLoader />}><HRResumeAnalysisPage /></Suspense>} />
 <Route path="/hr/backup" element={<Suspense fallback={<PageLoader />}><HRBackupPage /></Suspense>} />
           </Route>
         </Route>

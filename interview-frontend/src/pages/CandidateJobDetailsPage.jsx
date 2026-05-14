@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, Bookmark, BriefcaseBusiness, CheckCircle2, Clock3, FileText, MapPin, Send } from "lucide-react";
 import { candidateApi } from "../services/api";
 import ApplicationStatusBadge from "../components/candidate/ApplicationStatusBadge";
@@ -35,7 +35,6 @@ function BulletList({ items }) {
 export default function CandidateJobDetailsPage() {
   const { jobId } = useParams();
   const location = useLocation();
-  const navigate = useNavigate();
   const { announce } = useAnnounce();
   const [dashboard, setDashboard] = useState(null);
   const [jobs, setJobs] = useState([]);

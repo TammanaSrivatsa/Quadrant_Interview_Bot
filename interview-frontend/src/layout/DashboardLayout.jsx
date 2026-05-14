@@ -7,11 +7,11 @@ import HelpSupportButton from "../components/HelpSupportButton";
 export default function DashboardLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : true));
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (typeof window !== "undefined" ? window.innerWidth < 1280 : false));
   const showHelp = !location.pathname.startsWith("/candidate");
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 font-sans">
+    <div className="min-h-screen bg-[#f3f6fb] text-slate-950 dark:bg-slate-950 dark:text-slate-100 font-sans">
       {sidebarOpen && (
         <button
           type="button"
@@ -31,12 +31,12 @@ export default function DashboardLayout() {
           if (window.innerWidth >= 1024) setSidebarCollapsed(true);
         }}
       />
-      <div 
-        className={`transition-all duration-300 ${sidebarCollapsed ? "lg:pl-16" : "lg:pl-64"}`}
+      <div
+        className={`transition-all duration-300 ${sidebarCollapsed ? "lg:pl-[68px]" : "lg:pl-[260px]"}`}
       >
         <Navbar toggleSidebar={() => setSidebarOpen((open) => !open)} />
-        <main className="p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto">
+        <main className="px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+          <div className="mx-auto max-w-[1210px]">
             <Outlet />
           </div>
         </main>
